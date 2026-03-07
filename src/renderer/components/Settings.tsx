@@ -375,6 +375,8 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, onUpda
 
   // Add state for providers configuration
   const [providers, setProviders] = useState<ProvidersConfig>(() => getDefaultProviders());
+
+  const isBaseUrlLocked = (activeProvider === 'zhipu' && providers.zhipu.codingPlanEnabled) || (activeProvider === 'qwen' && providers.qwen.codingPlanEnabled) || (activeProvider === 'volcengine' && providers.volcengine.codingPlanEnabled) || (activeProvider === 'moonshot' && providers.moonshot.codingPlanEnabled);
   
   // 创建引用来确保内容区域的滚动
   const contentRef = useRef<HTMLDivElement>(null);
@@ -2391,45 +2393,45 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, onUpda
                   {i18nService.t('baseUrl')}
                 </label>
                 <div className="relative">
-                <input
-                  type="text"
-                  id={`${activeProvider}-baseUrl`}
-                  value={
-                    activeProvider === 'zhipu' && providers.zhipu.codingPlanEnabled
-                      ? (getEffectiveApiFormat('zhipu', providers.zhipu.apiFormat) === 'anthropic'
-                          ? 'https://open.bigmodel.cn/api/anthropic'
-                          : 'https://open.bigmodel.cn/api/coding/paas/v4')
-                      : activeProvider === 'qwen' && providers.qwen.codingPlanEnabled
-                        ? (getEffectiveApiFormat('qwen', providers.qwen.apiFormat) === 'anthropic'
-                            ? 'https://coding.dashscope.aliyuncs.com/apps/anthropic'
-                            : 'https://coding.dashscope.aliyuncs.com/v1')
-                        : activeProvider === 'volcengine' && providers.volcengine.codingPlanEnabled
-                          ? (getEffectiveApiFormat('volcengine', providers.volcengine.apiFormat) === 'anthropic'
-                              ? 'https://ark.cn-beijing.volces.com/api/coding'
-                              : 'https://ark.cn-beijing.volces.com/api/coding/v3')
-                          : activeProvider === 'moonshot' && providers.moonshot.codingPlanEnabled
-                            ? (getEffectiveApiFormat('moonshot', providers.moonshot.apiFormat) === 'anthropic'
-                                ? 'https://api.kimi.com/coding'
-                                : 'https://api.kimi.com/coding/v1')
-                            : providers[activeProvider].baseUrl
-                  }
-                  onChange={(e) => handleProviderConfigChange(activeProvider, 'baseUrl', e.target.value)}
-                  disabled={(activeProvider === 'zhipu' && providers.zhipu.codingPlanEnabled) || (activeProvider === 'qwen' && providers.qwen.codingPlanEnabled) || (activeProvider === 'volcengine' && providers.volcengine.codingPlanEnabled) || (activeProvider === 'moonshot' && providers.moonshot.codingPlanEnabled)}
-                  className={`block w-full rounded-xl bg-claude-surfaceInset dark:bg-claude-darkSurfaceInset dark:border-claude-darkBorder border-claude-border border focus:border-claude-accent focus:ring-1 focus:ring-claude-accent/30 dark:text-claude-darkText text-claude-text px-3 py-2 pr-8 text-xs ${(activeProvider === 'zhipu' && providers.zhipu.codingPlanEnabled) || (activeProvider === 'qwen' && providers.qwen.codingPlanEnabled) || (activeProvider === 'volcengine' && providers.volcengine.codingPlanEnabled) || (activeProvider === 'moonshot' && providers.moonshot.codingPlanEnabled) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  placeholder={i18nService.t('baseUrlPlaceholder')}
-                />
-                {providers[activeProvider].baseUrl && !((activeProvider === 'zhipu' && providers.zhipu.codingPlanEnabled) || (activeProvider === 'qwen' && providers.qwen.codingPlanEnabled) || (activeProvider === 'volcengine' && providers.volcengine.codingPlanEnabled) || (activeProvider === 'moonshot' && providers.moonshot.codingPlanEnabled)) && (
-                  <div className="absolute right-2 inset-y-0 flex items-center">
-                    <button
-                      type="button"
-                      onClick={() => handleProviderConfigChange(activeProvider, 'baseUrl', '')}
-                      className="p-0.5 rounded text-claude-textSecondary dark:text-claude-darkTextSecondary hover:text-claude-accent transition-colors"
-                      title={i18nService.t('clear') || 'Clear'}
-                    >
-                      <XCircleIconSolid className="h-4 w-4" />
-                    </button>
-                  </div>
-                )}
+                  <input
+                    type="text"
+                    id={`${activeProvider}-baseUrl`}
+                    value={
+                      activeProvider === 'zhipu' && providers.zhipu.codingPlanEnabled
+                        ? (getEffectiveApiFormat('zhipu', providers.zhipu.apiFormat) === 'anthropic'
+                            ? 'https://open.bigmodel.cn/api/anthropic'
+                            : 'https://open.bigmodel.cn/api/coding/paas/v4')
+                        : activeProvider === 'qwen' && providers.qwen.codingPlanEnabled
+                          ? (getEffectiveApiFormat('qwen', providers.qwen.apiFormat) === 'anthropic'
+                              ? 'https://coding.dashscope.aliyuncs.com/apps/anthropic'
+                              : 'https://coding.dashscope.aliyuncs.com/v1')
+                          : activeProvider === 'volcengine' && providers.volcengine.codingPlanEnabled
+                            ? (getEffectiveApiFormat('volcengine', providers.volcengine.apiFormat) === 'anthropic'
+                                ? 'https://ark.cn-beijing.volces.com/api/coding'
+                                : 'https://ark.cn-beijing.volces.com/api/coding/v3')
+                            : activeProvider === 'moonshot' && providers.moonshot.codingPlanEnabled
+                              ? (getEffectiveApiFormat('moonshot', providers.moonshot.apiFormat) === 'anthropic'
+                                  ? 'https://api.kimi.com/coding'
+                                  : 'https://api.kimi.com/coding/v1')
+                              : providers[activeProvider].baseUrl
+                    }
+                    onChange={(e) => handleProviderConfigChange(activeProvider, 'baseUrl', e.target.value)}
+                    disabled={isBaseUrlLocked}
+                    className={`block w-full rounded-xl bg-claude-surfaceInset dark:bg-claude-darkSurfaceInset dark:border-claude-darkBorder border-claude-border border focus:border-claude-accent focus:ring-1 focus:ring-claude-accent/30 dark:text-claude-darkText text-claude-text px-3 py-2 pr-8 text-xs ${isBaseUrlLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    placeholder={i18nService.t('baseUrlPlaceholder')}
+                  />
+                  {providers[activeProvider].baseUrl && !isBaseUrlLocked && (
+                    <div className="absolute right-2 inset-y-0 flex items-center">
+                      <button
+                        type="button"
+                        onClick={() => handleProviderConfigChange(activeProvider, 'baseUrl', '')}
+                        className="p-0.5 rounded text-claude-textSecondary dark:text-claude-darkTextSecondary hover:text-claude-accent transition-colors"
+                        title={i18nService.t('clear') || 'Clear'}
+                      >
+                        <XCircleIconSolid className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
                 {activeProvider === 'custom' && (
                 <div className="mt-1.5 space-y-0.5 text-[11px] text-claude-secondaryText dark:text-claude-darkSecondaryText">
