@@ -224,13 +224,17 @@ export function extractToFromSessionKey(platform: NotifyPlatform, sessionKey: st
       if (last && last.startsWith('ou_')) return last;
       return null;
     }
+    case 'qq': {
+      // qqbot:c2c:direct:255058bbf46f5890ed9facfe74abe75e → 255058BBF46F5890ED9FACFE74ABE75E
+      // QQ openid letters must be uppercased
+      const last = parts[parts.length - 1];
+      return last ? last.toUpperCase() : null;
+    }
     case 'wecom':
-    case 'qq':
     case 'telegram':
     case 'discord': {
       // Take the last segment:
       // wecom:direct:liugang → liugang
-      // qqbot:c2c:direct:255058bbf46f5890ed9facfe74abe75e → 255058bbf46f5890ed9facfe74abe75e
       // telegram:direct:8322789714 or telegram:8322789714 → 8322789714
       // discord:channel:1470329860667867203 → 1470329860667867203
       const last = parts[parts.length - 1];
@@ -239,6 +243,13 @@ export function extractToFromSessionKey(platform: NotifyPlatform, sessionKey: st
     default:
       return null;
   }
+}
+
+/**
+ * Detect whether a session key or conversationId represents a DM or group conversation.
+ */
+export function detectSessionType(sessionKeyOrConvId: string): 'dm' | 'group' {
+  return sessionKeyOrConvId.includes(':group:') ? 'group' : 'dm';
 }
 
 const CHANNEL_TO_PLATFORM: Record<string, NotifyPlatform> = Object.fromEntries(

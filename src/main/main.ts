@@ -43,7 +43,7 @@ import { getSkillServiceManager } from './skillServices';
 import { createTray, destroyTray, updateTrayMenu } from './trayManager';
 import { isAutoLaunched, getAutoLaunchEnabled, setAutoLaunchEnabled } from './autoLaunchManager';
 import { McpStore } from './mcpStore';
-import { CronJobService, PLATFORM_DELIVERY_FORMAT, extractToFromSessionKey } from './libs/cronJobService';
+import { CronJobService, PLATFORM_DELIVERY_FORMAT, extractToFromSessionKey, detectSessionType } from './libs/cronJobService';
 import type { NotifyPlatform } from '../renderer/types/scheduledTask';
 import { McpServerManager } from './libs/mcpServerManager';
 import { McpBridgeServer } from './libs/mcpBridgeServer';
@@ -2494,7 +2494,16 @@ if (!gotTheLock) {
               const extractedId = extractToFromSessionKey(platform as NotifyPlatform, key);
               if (extractedId) {
                 extractedIds.add(extractedId);
-                addTarget(extractedId, extractedId, 'extracted');
+                if (platform === 'qq') {
+                  // QQ: format as full delivery address (e.g. qqbot:c2c:ID or qqbot:group:ID)
+                  const sessionType = detectSessionType(key);
+                  const formatted = sessionType === 'group' && fmt.groupFormat
+                    ? fmt.groupFormat(extractedId)
+                    : fmt.dmFormat(extractedId);
+                  addTarget(formatted, formatted, 'extracted');
+                } else {
+                  addTarget(extractedId, extractedId, 'extracted');
+                }
               }
             }
           }
@@ -2537,7 +2546,16 @@ if (!gotTheLock) {
               // Extract to-field from conversationId using platform rules
               const extractedId = extractToFromSessionKey(platform as NotifyPlatform, id);
               if (extractedId) {
-                addTarget(extractedId, extractedId, 'extracted');
+                if (platform === 'qq') {
+                  // QQ: format as full delivery address
+                  const sessionType = detectSessionType(id);
+                  const formatted = sessionType === 'group' && fmt.groupFormat
+                    ? fmt.groupFormat(extractedId)
+                    : fmt.dmFormat(extractedId);
+                  addTarget(formatted, formatted, 'extracted');
+                } else {
+                  addTarget(extractedId, extractedId, 'extracted');
+                }
               }
               // Also add full delivery address as session target
               addTarget(fmt.dmFormat(id), `${id}`, 'session');
