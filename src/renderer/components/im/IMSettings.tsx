@@ -431,57 +431,72 @@ const IMSettings: React.FC = () => {
       // All OpenClaw platforms: im:config:set handler already calls
       // syncOpenClawConfig({ restartGatewayIfRunning: true }), so no startGateway/stopGateway needed.
       // Only updateConfig + loadStatus is required.
+      // Pessimistic UI update: wait for IPC to complete before updating Redux state.
+      // This prevents UI/backend state divergence when rapidly toggling, since the
+      // backend debounces syncOpenClawConfig calls with a 600ms window.
       if (platform === 'telegram') {
         const newEnabled = !tgOpenClawConfig.enabled;
-        dispatch(setTelegramOpenClawConfig({ enabled: newEnabled }));
-        if (newEnabled) dispatch(clearError());
-        await imService.updateConfig({ telegram: { ...tgOpenClawConfig, enabled: newEnabled } });
-        await imService.loadStatus();
+        const success = await imService.updateConfig({ telegram: { ...tgOpenClawConfig, enabled: newEnabled } });
+        if (success) {
+          dispatch(setTelegramOpenClawConfig({ enabled: newEnabled }));
+          if (newEnabled) dispatch(clearError());
+          await imService.loadStatus();
+        }
         return;
       }
 
       if (platform === 'dingtalk') {
         const newEnabled = !dtOpenClawConfig.enabled;
-        dispatch(setDingTalkConfig({ enabled: newEnabled }));
-        if (newEnabled) dispatch(clearError());
-        await imService.updateConfig({ dingtalk: { ...dtOpenClawConfig, enabled: newEnabled } });
-        await imService.loadStatus();
+        const success = await imService.updateConfig({ dingtalk: { ...dtOpenClawConfig, enabled: newEnabled } });
+        if (success) {
+          dispatch(setDingTalkConfig({ enabled: newEnabled }));
+          if (newEnabled) dispatch(clearError());
+          await imService.loadStatus();
+        }
         return;
       }
 
       if (platform === 'feishu') {
         const newEnabled = !fsOpenClawConfig.enabled;
-        dispatch(setFeishuConfig({ enabled: newEnabled }));
-        if (newEnabled) dispatch(clearError());
-        await imService.updateConfig({ feishu: { ...fsOpenClawConfig, enabled: newEnabled } });
-        await imService.loadStatus();
+        const success = await imService.updateConfig({ feishu: { ...fsOpenClawConfig, enabled: newEnabled } });
+        if (success) {
+          dispatch(setFeishuConfig({ enabled: newEnabled }));
+          if (newEnabled) dispatch(clearError());
+          await imService.loadStatus();
+        }
         return;
       }
 
       if (platform === 'discord') {
         const newEnabled = !dcOpenClawConfig.enabled;
-        dispatch(setDiscordConfig({ enabled: newEnabled }));
-        if (newEnabled) dispatch(clearError());
-        await imService.updateConfig({ discord: { ...dcOpenClawConfig, enabled: newEnabled } });
-        await imService.loadStatus();
+        const success = await imService.updateConfig({ discord: { ...dcOpenClawConfig, enabled: newEnabled } });
+        if (success) {
+          dispatch(setDiscordConfig({ enabled: newEnabled }));
+          if (newEnabled) dispatch(clearError());
+          await imService.loadStatus();
+        }
         return;
       }
 
       if (platform === 'qq') {
         const newEnabled = !qqOpenClawConfig.enabled;
-        dispatch(setQQConfig({ enabled: newEnabled }));
-        if (newEnabled) dispatch(clearError());
-        await imService.updateConfig({ qq: { ...qqOpenClawConfig, enabled: newEnabled } });
-        await imService.loadStatus();
+        const success = await imService.updateConfig({ qq: { ...qqOpenClawConfig, enabled: newEnabled } });
+        if (success) {
+          dispatch(setQQConfig({ enabled: newEnabled }));
+          if (newEnabled) dispatch(clearError());
+          await imService.loadStatus();
+        }
         return;
       }
 
       if (platform === 'wecom') {
         const newEnabled = !wecomOpenClawConfig.enabled;
-        dispatch(setWecomConfig({ enabled: newEnabled }));
-        if (newEnabled) dispatch(clearError());
-        await imService.updateConfig({ wecom: { ...wecomOpenClawConfig, enabled: newEnabled } });
-        await imService.loadStatus();
+        const success = await imService.updateConfig({ wecom: { ...wecomOpenClawConfig, enabled: newEnabled } });
+        if (success) {
+          dispatch(setWecomConfig({ enabled: newEnabled }));
+          if (newEnabled) dispatch(clearError());
+          await imService.loadStatus();
+        }
         return;
       }
 
