@@ -48,6 +48,7 @@ import { IMGatewayManager, IMPlatform, IMGatewayConfig } from './im';
 import { APP_NAME } from './appConstants';
 import { getSkillServiceManager } from './skillServices';
 import { createTray, destroyTray, updateTrayMenu } from './trayManager';
+import { setLanguage } from './i18n';
 import { isAutoLaunched, getAutoLaunchEnabled, setAutoLaunchEnabled } from './autoLaunchManager';
 import { McpStore } from './mcpStore';
 import { CronJobService } from './libs/cronJobService';
@@ -769,6 +770,13 @@ const getOpenClawConfigSync = (): OpenClawConfigSync => {
       getPopoConfig: () => {
         try {
           return getIMGatewayManager().getConfig().popo;
+          } catch {
+          return null;
+        }
+      },
+      getNimConfig: () => {
+        try {
+          return getIMGatewayManager().getConfig().nim;
         } catch {
           return null;
         }
@@ -795,9 +803,68 @@ const getOpenClawConfigSync = (): OpenClawConfigSync => {
   return openClawConfigSync;
 };
 
+// Deferred gateway restart: when a config change requires a gateway restart
+// but active cowork sessions exist, we defer the restart until all sessions
+// complete.  A polling interval checks periodically; a hard timeout ensures
+// the restart eventually happens even if a session hangs.
+let deferredRestartTimer: ReturnType<typeof setInterval> | null = null;
+let deferredRestartTimeout: ReturnType<typeof setTimeout> | null = null;
+const DEFERRED_RESTART_POLL_MS = 3_000;
+const DEFERRED_RESTART_MAX_WAIT_MS = 5 * 60_000; // 5 minutes hard cap
+
+const clearDeferredRestart = () => {
+  if (deferredRestartTimer) { clearInterval(deferredRestartTimer); deferredRestartTimer = null; }
+  if (deferredRestartTimeout) { clearTimeout(deferredRestartTimeout); deferredRestartTimeout = null; }
+};
+
+const executeDeferredGatewayRestart = async (reason: string) => {
+  clearDeferredRestart();
+  console.log(`[OpenClaw] executeDeferredGatewayRestart: performing deferred restart (reason: ${reason})`);
+  await syncOpenClawConfig({ reason: `deferred:${reason}`, restartGatewayIfRunning: true });
+};
+
+const scheduleDeferredGatewayRestart = (reason: string) => {
+  // If already scheduled, the latest config is already on disk — just let
+  // the existing timer handle the restart.
+  if (deferredRestartTimer) {
+    console.log(`[OpenClaw] scheduleDeferredGatewayRestart: already scheduled, skipping (reason: ${reason})`);
+    return;
+  }
+
+  deferredRestartTimer = setInterval(() => {
+    if (!openClawRuntimeAdapter?.hasActiveSessions()) {
+      void executeDeferredGatewayRestart(reason);
+    }
+  }, DEFERRED_RESTART_POLL_MS);
+
+  // Hard timeout: restart anyway after max wait to avoid config drift.
+  deferredRestartTimeout = setTimeout(() => {
+    console.warn(`[OpenClaw] scheduleDeferredGatewayRestart: max wait exceeded, forcing restart (reason: ${reason})`);
+    void executeDeferredGatewayRestart(reason);
+  }, DEFERRED_RESTART_MAX_WAIT_MS);
+};
+
 const syncOpenClawConfig = async (
   options: { reason: string; restartGatewayIfRunning?: boolean } = { reason: 'unknown' },
 ): Promise<{ success: boolean; changed: boolean; status?: OpenClawEngineStatus; error?: string }> => {
+  // When a restart would be needed and there are active sessions, defer the
+  // entire sync (including the config file write) to avoid triggering
+  // OpenClaw's built-in file-watcher reload (SIGUSR1) which would kill
+  // in-flight conversations even without our explicit gateway restart.
+  if (options.restartGatewayIfRunning && openClawRuntimeAdapter?.hasActiveSessions()) {
+    const manager = getOpenClawEngineManager();
+    const status = manager.getStatus();
+    if (status.phase === 'running') {
+      console.log(`[OpenClaw] syncOpenClawConfig: deferring entire config sync because active sessions exist (reason: ${options.reason})`);
+      scheduleDeferredGatewayRestart(options.reason);
+      return {
+        success: true,
+        changed: false,
+        status,
+      };
+    }
+  }
+
   const syncResult = getOpenClawConfigSync().sync(options.reason);
   if (!syncResult.ok) {
     const status = getOpenClawEngineManager().setExternalError(
@@ -832,7 +899,7 @@ const syncOpenClawConfig = async (
   // This prevents a race where the old client's async `onClose` fires after a new client
   // has already been created, destroying the new connection.
   if (openClawRuntimeAdapter) {
-    console.log('[OpenClaw] syncOpenClawConfig: pre-emptively disconnecting runtime adapter before gateway restart');
+    console.log(`[OpenClaw] syncOpenClawConfig: pre-emptively disconnecting runtime adapter before gateway restart (reason: ${options.reason})`);
     openClawRuntimeAdapter.disconnectGatewayClient();
   }
 
@@ -947,6 +1014,7 @@ const getCoworkEngineRouter = () => {
             coworkStore: getCoworkStore(),
             imStore,
             getDefaultCwd: () => getCoworkStore().getConfig().workingDirectory || os.homedir(),
+            resolveJobName: (jobId) => getCronJobService().getJobNameSync(jobId),
           });
           openClawRuntimeAdapter.setChannelSessionSync(channelSessionSync);
         }
@@ -1730,6 +1798,32 @@ if (!gotTheLock) {
     }
   });
 
+  let restartGatewayPromise: Promise<OpenClawEngineStatus> | null = null;
+  ipcMain.handle('openclaw:engine:restartGateway', async () => {
+    if (restartGatewayPromise) {
+      const status = await restartGatewayPromise;
+      return { success: status.phase === 'running' || status.phase === 'ready', status };
+    }
+    try {
+      const manager = getOpenClawEngineManager();
+      restartGatewayPromise = manager.restartGateway();
+      const status = await restartGatewayPromise;
+      return {
+        success: status.phase === 'running' || status.phase === 'ready',
+        status,
+      };
+    } catch (error) {
+      const manager = getOpenClawEngineManager();
+      return {
+        success: false,
+        status: manager.getStatus(),
+        error: error instanceof Error ? error.message : 'Failed to restart OpenClaw gateway',
+      };
+    } finally {
+      restartGatewayPromise = null;
+    }
+  });
+
   // MCP Server IPC handlers
   ipcMain.handle('mcp:list', () => {
     try {
@@ -1928,6 +2022,15 @@ if (!gotTheLock) {
         imageAttachments: options.imageAttachments,
       }).catch(error => {
         console.error('Cowork session error:', error);
+        // Ensure the renderer is notified so it can clear the streaming state.
+        // Without this, a gateway disconnect (or similar async failure) leaves
+        // the UI permanently stuck in "streaming" mode.
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const windows = BrowserWindow.getAllWindows();
+        windows.forEach((win) => {
+          if (win.isDestroyed()) return;
+          win.webContents.send('cowork:stream:error', { sessionId: session.id, error: errorMessage });
+        });
       });
 
       const sessionWithMessages = coworkStoreInstance.getSession(session.id) || {
@@ -1970,6 +2073,15 @@ if (!gotTheLock) {
         imageAttachments: options.imageAttachments,
       }).catch(error => {
         console.error('Cowork continue error:', error);
+        // Ensure the renderer is notified so it can clear the streaming state.
+        // Without this, a gateway disconnect (or similar async failure) leaves
+        // the UI permanently stuck in "streaming" mode.
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const windows = BrowserWindow.getAllWindows();
+        windows.forEach((win) => {
+          if (win.isDestroyed()) return;
+          win.webContents.send('cowork:stream:error', { sessionId: options.sessionId, error: errorMessage });
+        });
       });
 
       const session = getCoworkStore().getSession(options.sessionId);
@@ -2681,16 +2793,18 @@ if (!gotTheLock) {
     }, IM_CONFIG_SYNC_DEBOUNCE_MS);
   };
 
-  ipcMain.handle('im:config:set', async (_event, config: Partial<IMGatewayConfig>) => {
+  ipcMain.handle('im:config:set', async (_event, config: Partial<IMGatewayConfig>, options?: { syncGateway?: boolean }) => {
     try {
-      getIMGatewayManager().setConfig(config);
+      getIMGatewayManager().setConfig(config, { syncGateway: options?.syncGateway });
 
       // Sync OpenClaw config once for all platform changes (instead of per-platform).
       // setConfig() already persists to DB synchronously, so syncOpenClawConfig just
       // needs to regenerate openclaw.json and restart the gateway once.
+      // Only trigger sync when explicitly requested via syncGateway flag (e.g. from
+      // the global Save button), to avoid frequent gateway restarts on every field blur.
       const hasOpenClawChange = config.telegram || config.discord || config.dingtalk
         || config.feishu || config.qq || config.wecom || config.popo;
-      if (hasOpenClawChange && getOpenClawEngineManager().getStatus().phase === 'running') {
+      if (options?.syncGateway && hasOpenClawChange && getOpenClawEngineManager().getStatus().phase === 'running') {
         scheduleImConfigSync();
       }
       return { success: true };
@@ -2698,6 +2812,23 @@ if (!gotTheLock) {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to set IM config',
+      };
+    }
+  });
+
+  // Explicitly trigger OpenClaw config sync + gateway restart.
+  // Called from the global Settings Save button after config fields have been
+  // persisted to DB via im:config:set (without syncGateway flag).
+  ipcMain.handle('im:config:sync', async () => {
+    try {
+      if (getOpenClawEngineManager().getStatus().phase === 'running') {
+        scheduleImConfigSync();
+      }
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to sync IM config',
       };
     }
   });
@@ -2770,6 +2901,17 @@ if (!gotTheLock) {
       }
     }
     return '127.0.0.1';
+  });
+  ipcMain.handle('im:openclaw:config-schema', async () => {
+    try {
+      const result = await getIMGatewayManager().getOpenClawConfigSchema();
+      return { success: true, result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get OpenClaw config schema',
+      };
+    }
   });
 
   // ---- Pairing IPC handlers ----
@@ -3454,8 +3596,11 @@ if (!gotTheLock) {
       if (!isAutoLaunched()) {
         mainWindow?.show();
       }
+      // Initialize main-process i18n from stored language before creating UI elements.
+      const initLang = getStore().get<{ language?: string }>('app_config')?.language;
+      setLanguage(initLang === 'en' ? 'en' : 'zh');
       // 窗口就绪后创建系统托盘
-      createTray(() => mainWindow, getStore());
+      createTray(() => mainWindow);
 
       // Start cron polling after the window is ready.
       (async () => {
@@ -3717,7 +3862,8 @@ if (!gotTheLock) {
       const currentLanguage = newConfig?.language;
       if (currentLanguage !== lastLanguage) {
         lastLanguage = currentLanguage;
-        updateTrayMenu(() => mainWindow, getStore());
+        setLanguage(currentLanguage === 'en' ? 'en' : 'zh');
+        updateTrayMenu(() => mainWindow);
       }
 
       const previousUseSystemProxy = oldConfig

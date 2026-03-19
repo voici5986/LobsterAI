@@ -129,8 +129,20 @@ class CoworkService {
     this.streamListenerCleanups.push(completeCleanup);
 
     // Error listener
-    const errorCleanup = cowork.onStreamError(({ sessionId }) => {
+    const errorCleanup = cowork.onStreamError(({ sessionId, error }) => {
       store.dispatch(updateSessionStatus({ sessionId, status: 'error' }));
+      // Surface the error as a visible message so the user knows what happened.
+      if (error) {
+        store.dispatch(addMessage({
+          sessionId,
+          message: {
+            id: `error-${Date.now()}`,
+            type: 'system',
+            content: error,
+            timestamp: Date.now(),
+          },
+        }));
+      }
     });
     this.streamListenerCleanups.push(errorCleanup);
 
@@ -575,6 +587,19 @@ class CoworkService {
       return null;
     }
     const result = await engineApi.retryInstall();
+    if (result?.status) {
+      this.notifyOpenClawStatus(result.status);
+      return result.status;
+    }
+    return this.openClawStatus;
+  }
+
+  async restartOpenClawGateway(): Promise<OpenClawEngineStatus | null> {
+    const engineApi = window.electron?.openclaw?.engine;
+    if (!engineApi?.restartGateway) {
+      return null;
+    }
+    const result = await engineApi.restartGateway();
     if (result?.status) {
       this.notifyOpenClawStatus(result.status);
       return result.status;

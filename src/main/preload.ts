@@ -123,6 +123,7 @@ contextBridge.exposeInMainWorld('electron', {
       getStatus: () => ipcRenderer.invoke('openclaw:engine:getStatus'),
       install: () => ipcRenderer.invoke('openclaw:engine:install'),
       retryInstall: () => ipcRenderer.invoke('openclaw:engine:retryInstall'),
+      restartGateway: () => ipcRenderer.invoke('openclaw:engine:restartGateway'),
       onProgress: (callback: (status: any) => void) => {
         const handler = (_event: any, status: any) => callback(status);
         ipcRenderer.on('openclaw:engine:onProgress', handler);
@@ -279,7 +280,8 @@ contextBridge.exposeInMainWorld('electron', {
   im: {
     // Configuration
     getConfig: () => ipcRenderer.invoke('im:config:get'),
-    setConfig: (config: any) => ipcRenderer.invoke('im:config:set', config),
+    setConfig: (config: any, options?: { syncGateway?: boolean }) => ipcRenderer.invoke('im:config:set', config, options),
+    syncConfig: () => ipcRenderer.invoke('im:config:sync'),
 
     // Gateway control
     startGateway: (platform: 'dingtalk' | 'feishu' | 'telegram' | 'discord' | 'nim' | 'xiaomifeng' | 'wecom' | 'popo') => ipcRenderer.invoke('im:gateway:start', platform),
@@ -292,6 +294,9 @@ contextBridge.exposeInMainWorld('electron', {
     // Status
     getStatus: () => ipcRenderer.invoke('im:status:get'),
     getLocalIp: () => ipcRenderer.invoke('im:getLocalIp') as Promise<string>,
+    // OpenClaw config schema
+    getOpenClawConfigSchema: () => ipcRenderer.invoke('im:openclaw:config-schema'),
+
 
     // Pairing
     listPairingRequests: (platform: string) => ipcRenderer.invoke('im:pairing:list', platform),

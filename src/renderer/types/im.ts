@@ -137,19 +137,36 @@ export interface DiscordGatewayStatus {
 
 export type NimTeamPolicy = 'open' | 'allowlist' | 'disabled';
 
+export interface NimP2pConfig {
+  policy: 'open' | 'allowlist' | 'disabled';
+  allowFrom?: (string | number)[];
+}
+
+export interface NimTeamConfig {
+  policy: 'open' | 'allowlist' | 'disabled';
+  allowFrom?: (string | number)[];
+}
+
+export interface NimQChatConfig {
+  policy: 'open' | 'allowlist' | 'disabled';
+  allowFrom?: (string | number)[];
+}
+
+export interface NimAdvancedConfig {
+  mediaMaxMb?: number;
+  textChunkLimit?: number;
+  debug?: boolean;
+}
+
 export interface NimConfig {
   enabled: boolean;
   appKey: string;
   account: string;
   token: string;
-  accountWhitelist: string;
-  debug?: boolean;
-  // 群组消息配置
-  teamPolicy?: NimTeamPolicy;      // 群消息策略，默认 'disabled'
-  teamAllowlist?: string;          // 逗号分隔的群 ID 白名单
-  // QChat 圈组配置
-  qchatEnabled?: boolean;          // 是否启用圈组
-  qchatServerIds?: string;         // 逗号分隔的服务器 ID，空则自动发现
+  p2p?: NimP2pConfig;
+  team?: NimTeamConfig;
+  qchat?: NimQChatConfig;
+  advanced?: NimAdvancedConfig;
 }
 
 export interface NimGatewayStatus {
@@ -453,8 +470,6 @@ export const DEFAULT_NIM_CONFIG: NimConfig = {
   appKey: '',
   account: '',
   token: '',
-  accountWhitelist: '',
-  debug: true,
 };
 
 export const DEFAULT_XIAOMIFENG_CONFIG: XiaomifengConfig = {

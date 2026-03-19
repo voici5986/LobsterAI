@@ -26,6 +26,7 @@ import type {
   CoworkMemoryStats,
 } from '../types/cowork';
 import IMSettings from './im/IMSettings';
+import { imService } from '../services/im';
 import EmailSkillConfig from './skills/EmailSkillConfig';
 import { defaultConfig, type AppConfig, getVisibleProviders } from '../config';
 import {
@@ -1228,6 +1229,11 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, onUpda
           throw new Error(i18nService.t('coworkBootstrapSaveFailed'));
         }
       }
+
+      // Sync IM gateway config (regenerate openclaw.json and restart gateway if running).
+      // This is done on every save regardless of activeTab, because the user may have
+      // edited IM config then switched tabs before clicking Save.
+      await imService.saveAndSyncConfig();
 
       didSaveRef.current = true;
       onClose();

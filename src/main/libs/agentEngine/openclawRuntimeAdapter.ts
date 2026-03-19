@@ -895,6 +895,10 @@ export class OpenClawRuntimeAdapter extends EventEmitter implements CoworkRuntim
     return this.activeTurns.has(sessionId);
   }
 
+  hasActiveSessions(): boolean {
+    return this.activeTurns.size > 0;
+  }
+
   getSessionConfirmationMode(sessionId: string): 'modal' | 'text' | null {
     return this.confirmationModeBySession.get(sessionId) ?? null;
   }

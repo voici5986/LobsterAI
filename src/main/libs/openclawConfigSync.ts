@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import type { CoworkConfig, CoworkExecutionMode } from '../coworkStore';
 import type { TelegramOpenClawConfig, DiscordOpenClawConfig } from '../im/types';
-import type { DingTalkOpenClawConfig, FeishuOpenClawConfig, QQOpenClawConfig, WecomOpenClawConfig, PopoOpenClawConfig } from '../im/types';
+import type { DingTalkOpenClawConfig, FeishuOpenClawConfig, QQOpenClawConfig, WecomOpenClawConfig, PopoOpenClawConfig, NimConfig } from '../im/types';
 import { resolveRawApiConfig } from './claudeSettings';
 import type { OpenClawEngineManager } from './openclawEngineManager';
 import { parseChannelSessionKey } from './openclawChannelSessionSync';
@@ -421,6 +421,7 @@ type OpenClawConfigSyncDeps = {
   getQQConfig: () => QQOpenClawConfig | null;
   getWecomConfig: () => WecomOpenClawConfig | null;
   getPopoConfig: () => PopoOpenClawConfig | null;
+  getNimConfig: () => NimConfig | null;
   getMcpBridgeConfig?: () => McpBridgeConfig | null;
   getSkillsList?: () => Array<{ id: string; enabled: boolean }>;
 };
@@ -435,6 +436,7 @@ export class OpenClawConfigSync {
   private readonly getQQConfig: () => QQOpenClawConfig | null;
   private readonly getWecomConfig: () => WecomOpenClawConfig | null;
   private readonly getPopoConfig: () => PopoOpenClawConfig | null;
+  private readonly getNimConfig: () => NimConfig | null;
   private readonly getMcpBridgeConfig?: () => McpBridgeConfig | null;
   private readonly getSkillsList?: () => Array<{ id: string; enabled: boolean }>;
 
@@ -448,6 +450,7 @@ export class OpenClawConfigSync {
     this.getQQConfig = deps.getQQConfig;
     this.getWecomConfig = deps.getWecomConfig;
     this.getPopoConfig = deps.getPopoConfig;
+    this.getNimConfig = deps.getNimConfig;
     this.getMcpBridgeConfig = deps.getMcpBridgeConfig;
     this.getSkillsList = deps.getSkillsList;
   }
@@ -511,6 +514,8 @@ export class OpenClawConfigSync {
     const wecomConfig = this.getWecomConfig();
 
     const popoConfig = this.getPopoConfig();
+    
+    const nimConfig = this.getNimConfig();
 
     const hasAnyChannel = hasDingTalkOpenClaw;
 
@@ -587,6 +592,7 @@ export class OpenClawConfigSync {
                 if (id === 'qqbot') return !!(qqConfig?.enabled && qqConfig.appId);
                 if (id === 'wecom-openclaw-plugin') return !!(wecomConfig?.enabled && wecomConfig.botId);
                 if (id === 'moltbot-popo') return !!(popoConfig?.enabled && popoConfig.appKey);
+                if (id === 'nim') return !!(nimConfig?.enabled && nimConfig.appKey && nimConfig.account && nimConfig.token);
                 return true; // other plugins stay enabled
               })();
               return [id, { enabled: pluginEnabled }];
@@ -851,6 +857,21 @@ export class OpenClawConfigSync {
         popoChannel.webhookPath = popoConfig.webhookPath;
       }
       managedConfig.channels = { ...(managedConfig.channels as Record<string, unknown> || {}), 'moltbot-popo': popoChannel };
+    }
+    // Sync NIM OpenClaw channel config (via openclaw-nim plugin)
+    if (nimConfig?.enabled && nimConfig.appKey && nimConfig.account && nimConfig.token) {
+      const nimChannel: Record<string, unknown> = {
+        enabled: true,
+        appKey: nimConfig.appKey,
+        account: nimConfig.account,
+        token: nimConfig.token,
+      };
+      // Pass structured sub-configs directly — the plugin's Zod schema validates them
+      if (nimConfig.p2p) nimChannel.p2p = nimConfig.p2p;
+      if (nimConfig.team) nimChannel.team = nimConfig.team;
+      if (nimConfig.qchat) nimChannel.qchat = nimConfig.qchat;
+      if (nimConfig.advanced) nimChannel.advanced = nimConfig.advanced;
+      managedConfig.channels = { ...(managedConfig.channels as Record<string, unknown> || {}), 'nim': nimChannel };
     }
 
     const nextContent = `${JSON.stringify(managedConfig, null, 2)}\n`;

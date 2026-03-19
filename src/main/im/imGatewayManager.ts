@@ -6,8 +6,6 @@
 
 import { EventEmitter } from 'events';
 import * as path from 'path';
-import * as os from 'os';
-import * as fs from 'fs';
 import { NimGateway } from './nimGateway';
 import { XiaomifengGateway } from './xiaomifengGateway';
 import { IMChatHandler } from './imChatHandler';
@@ -110,8 +108,6 @@ export class IMGatewayManager extends EventEmitter {
   private coworkRuntime: CoworkRuntime | null = null;
   private coworkStore: CoworkStore | null = null;
 
-  // NIM probe mutex: serializes concurrent connectivity tests
-  private nimProbePromise: Promise<void> | null = null;
 
   // DingTalk direct HTTP API token cache
   private dingTalkAccessToken: string | null = null;
@@ -148,23 +144,7 @@ export class IMGatewayManager extends EventEmitter {
   private setupGatewayEventForwarding(): void {
     // DingTalk runs via OpenClaw; no direct gateway events to forward
 
-    // NIM events
-    this.nimGateway.on('status', () => {
-      this.emit('statusChange', this.getStatus());
-    });
-    this.nimGateway.on('connected', () => {
-      this.emit('statusChange', this.getStatus());
-    });
-    this.nimGateway.on('disconnected', () => {
-      this.emit('statusChange', this.getStatus());
-    });
-    this.nimGateway.on('error', (error) => {
-      this.emit('error', { platform: 'nim', error });
-      this.emit('statusChange', this.getStatus());
-    });
-    this.nimGateway.on('message', (message: IMMessage) => {
-      this.emit('message', message);
-    });
+    // NIM runs via OpenClaw; no direct gateway events to forward
 
     // Xiaomifeng events
     this.xiaomifengGateway.on('status', () => {
@@ -200,10 +180,7 @@ export class IMGatewayManager extends EventEmitter {
 
     // DingTalk runs via OpenClaw; no direct reconnect needed
 
-    if (this.nimGateway && !this.nimGateway.isConnected()) {
-      console.log('[IMGatewayManager] Reconnecting NIM...');
-      this.nimGateway.reconnectIfNeeded();
-    }
+    // NIM runs via OpenClaw; no direct reconnect needed
 
     if (this.xiaomifengGateway && !this.xiaomifengGateway.isConnected()) {
       console.log('[IMGatewayManager] Reconnecting Xiaomifeng...');
@@ -372,25 +349,15 @@ export class IMGatewayManager extends EventEmitter {
   }
 
   // ==================== Configuration ====================
-
-  /**
-   * Get current configuration
-   */
   getConfig(): IMGatewayConfig {
     return this.imStore.getConfig();
   }
 
-  /**
-   * Get the underlying IMStore instance (for session mapping operations)
-   */
   getIMStore(): IMStore {
     return this.imStore;
   }
 
-  /**
-   * Update configuration
-   */
-  setConfig(config: Partial<IMGatewayConfig>): void {
+  setConfig(config: Partial<IMGatewayConfig>, options?: { syncGateway?: boolean }): void {
     const previousConfig = this.imStore.getConfig();
     this.imStore.setConfig(config);
 
@@ -400,48 +367,16 @@ export class IMGatewayManager extends EventEmitter {
     }
 
 
-    // Hot-update NIM config: if credential fields changed while gateway is connected,
-    // restart the gateway transparently so the SDK re-logs in with new credentials.
-    if (config.nim && this.nimGateway) {
-      const oldNim = previousConfig.nim;
-      const newNim = { ...oldNim, ...config.nim };
-      const credentialsChanged =
-        newNim.appKey !== oldNim.appKey ||
-        newNim.account !== oldNim.account ||
-        newNim.token !== oldNim.token;
-      const gatewayShouldBeActive =
-        Boolean(newNim.enabled && newNim.appKey && newNim.account && newNim.token);
-
-      if (credentialsChanged && gatewayShouldBeActive) {
-        if (this.nimGateway.isRunning() || this.nimGateway.isReconnecting()) {
-          console.log('[IMGatewayManager] NIM credentials changed, restarting gateway...');
-          this.restartGateway('nim').catch((err) => {
-            console.error('[IMGatewayManager] Failed to restart NIM after config change:', err.message);
-          });
-        } else {
-          console.log('[IMGatewayManager] NIM credentials changed, starting gateway...');
-          this.startGateway('nim').catch((err) => {
-            console.error('[IMGatewayManager] Failed to start NIM after config change:', err.message);
-          });
-        }
-      } else {
-        // Hot-update non-credential fields (e.g. accountWhitelist) without restart
-        const nonCredentialChanged =
-          newNim.accountWhitelist !== oldNim.accountWhitelist;
-        if (nonCredentialChanged) {
-          console.log('[IMGatewayManager] NIM non-credential config changed, hot-updating...');
-          this.nimGateway.updateConfig(config.nim);
-        }
-      }
-    }
+    // NIM now runs via OpenClaw; config sync is handled by IPC handler
 
     // DingTalk now runs via OpenClaw; config sync is handled by IPC handler
 
     // Feishu now runs via OpenClaw; config sync is handled by IPC handler
 
 
-    // Hot-update Xiaomifeng config: restart if credential fields changed
-    if (config.xiaomifeng && this.xiaomifengGateway) {
+    // Hot-update Xiaomifeng config: restart if credential fields changed.
+    // Only perform hot-restart when syncGateway is explicitly true (i.e. user clicked Save).
+    if (options?.syncGateway && config.xiaomifeng && this.xiaomifengGateway) {
       const oldXmf = previousConfig.xiaomifeng;
       const newXmf = { ...oldXmf, ...config.xiaomifeng };
       const credentialsChanged =
@@ -475,10 +410,6 @@ export class IMGatewayManager extends EventEmitter {
 
   }
 
-  /**
-   * Restart a specific gateway (stop then start with latest config)
-   * Used for hot-reloading when credentials change at runtime.
-   */
   private async restartGateway(platform: IMPlatform): Promise<void> {
     console.log(`[IMGatewayManager] Restarting ${platform} gateway...`);
     await this.stopGateway(platform);
@@ -487,10 +418,6 @@ export class IMGatewayManager extends EventEmitter {
   }
 
   // ==================== Status ====================
-
-  /**
-   * Get current status of all gateways
-   */
   getStatus(): IMGatewayStatus {
     const config = this.getConfig();
     // Telegram runs via OpenClaw; reflect enabled+configured state as connected
@@ -545,7 +472,17 @@ export class IMGatewayManager extends EventEmitter {
         lastOutboundAt: null as number | null,
       },
       discord: discordStatus,
-      nim: this.nimGateway.getStatus(),
+      nim: (() => {
+        const nmConfig = config.nim;
+        return {
+          connected: Boolean(nmConfig?.enabled && nmConfig.appKey && nmConfig.account && nmConfig.token),
+          startedAt: null as number | null,
+          lastError: null as string | null,
+          botAccount: nmConfig?.account || null,
+          lastInboundAt: null as number | null,
+          lastOutboundAt: null as number | null,
+        };
+      })(),
       xiaomifeng: this.xiaomifengGateway.getStatus(),
       wecom: {
         connected: Boolean(config.wecom?.enabled && config.wecom.botId && config.wecom.secret),
@@ -565,9 +502,6 @@ export class IMGatewayManager extends EventEmitter {
     };
   }
 
-  /**
-   * Test platform connectivity and readiness for conversation.
-   */
   async testGateway(
     platform: IMPlatform,
     configOverride?: Partial<IMGatewayConfig>
@@ -590,6 +524,10 @@ export class IMGatewayManager extends EventEmitter {
     // DingTalk always uses OpenClaw mode
     if (platform === 'dingtalk') {
       return this.testDingTalkOpenClawConnectivity(configOverride);
+    }
+
+    if (platform === 'nim') {
+      return this.testNimOpenClawConnectivity(configOverride);
     }
 
     // WeCom always uses OpenClaw mode
@@ -735,14 +673,7 @@ export class IMGatewayManager extends EventEmitter {
       });
     }
 
-    if (platform === 'nim') {
-      addCheck({
-        code: 'nim_p2p_only_hint',
-        level: 'info',
-        message: '云信 IM 当前仅支持 P2P（私聊）消息。',
-        suggestion: '请通过私聊方式向机器人账号发送消息触发对话。',
-      });
-    } else if (platform === 'qq') {
+    if (platform === 'qq') {
       addCheck({
         code: 'qq_guild_mention_hint',
         level: 'info',
@@ -760,10 +691,6 @@ export class IMGatewayManager extends EventEmitter {
   }
 
   // ==================== Gateway Control ====================
-
-  /**
-   * Start a specific gateway
-   */
   async startGateway(platform: IMPlatform): Promise<void> {
     const config = this.getConfig();
 
@@ -796,7 +723,11 @@ export class IMGatewayManager extends EventEmitter {
       await this.ensureOpenClawGatewayConnected?.();
       return;
     } else if (platform === 'nim') {
-      await this.nimGateway.start(config.nim);
+      // NIM runs via OpenClaw gateway (openclaw-nim plugin)
+      console.log('[IMGatewayManager] NIM in OpenClaw mode, syncing config instead of starting direct gateway');
+      await this.syncOpenClawConfig?.();
+      await this.ensureOpenClawGatewayConnected?.();
+      return;
     } else if (platform === 'xiaomifeng') {
       await this.xiaomifengGateway.start(config.xiaomifeng);
     } else if (platform === 'qq') {
@@ -823,9 +754,6 @@ export class IMGatewayManager extends EventEmitter {
     this.restoreNotificationTarget(platform);
   }
 
-  /**
-   * Stop a specific gateway
-   */
   async stopGateway(platform: IMPlatform): Promise<void> {
     if (platform === 'dingtalk') {
       // DingTalk runs via OpenClaw gateway
@@ -848,7 +776,10 @@ export class IMGatewayManager extends EventEmitter {
       await this.syncOpenClawConfig?.();
       return;
     } else if (platform === 'nim') {
-      await this.nimGateway.stop();
+      // NIM runs via OpenClaw gateway
+      console.log('[IMGatewayManager] NIM in OpenClaw mode, syncing disabled config');
+      await this.syncOpenClawConfig?.();
+      return;
     } else if (platform === 'xiaomifeng') {
       await this.xiaomifengGateway.stop();
     } else if (platform === 'qq') {
@@ -872,7 +803,7 @@ export class IMGatewayManager extends EventEmitter {
   /**
    * Start all enabled gateways.
    *
-   * OpenClaw platforms (dingtalk/feishu/telegram/discord/qq/wecom/popo) are batched
+   * OpenClaw platforms (dingtalk/feishu/telegram/discord/qq/wecom/popo/nim) are batched
    * so that `syncOpenClawConfig` + `ensureOpenClawGatewayConnected` are called
    * only **once** regardless of how many OpenClaw platforms are enabled.
    * This avoids N serial gateway restarts which cause message loss, Telegram
@@ -885,14 +816,6 @@ export class IMGatewayManager extends EventEmitter {
     this.updateChatHandler();
 
     // --- Non-OpenClaw platforms: start independently ---
-
-    if (config.nim.enabled && config.nim.appKey && config.nim.account && config.nim.token) {
-      try {
-        await this.startGateway('nim');
-      } catch (error: any) {
-        console.error(`[IMGatewayManager] Failed to start NIM: ${error.message}`);
-      }
-    }
 
     if (config.xiaomifeng?.enabled && config.xiaomifeng?.clientId && config.xiaomifeng?.secret) {
       try {
@@ -927,6 +850,9 @@ export class IMGatewayManager extends EventEmitter {
     if (config.popo?.enabled && config.popo?.appKey && config.popo?.appSecret && config.popo?.token && config.popo?.aesKey) {
       openClawPlatformsToStart.push('popo');
     }
+    if (config.nim?.enabled && config.nim.appKey && config.nim.account && config.nim.token) {
+      openClawPlatformsToStart.push('nim');
+    }
 
     if (openClawPlatformsToStart.length > 0) {
       console.log(`[IMGatewayManager] Starting OpenClaw platforms in batch: ${openClawPlatformsToStart.join(', ')}`);
@@ -939,26 +865,16 @@ export class IMGatewayManager extends EventEmitter {
     }
   }
 
-  /**
-   * Stop all gateways
-   */
   async stopAll(): Promise<void> {
     await Promise.all([
-      this.nimGateway.stop(),
       this.xiaomifengGateway.stop(),
     ]);
   }
 
-  /**
-   * Check if any gateway is connected
-   */
   isAnyConnected(): boolean {
-    return this.nimGateway.isConnected() || this.xiaomifengGateway.isConnected();
+    return this.xiaomifengGateway.isConnected();
   }
 
-  /**
-   * Check if a specific gateway is connected
-   */
   isConnected(platform: IMPlatform): boolean {
     if (platform === 'dingtalk') {
       // DingTalk runs via OpenClaw; consider it connected when enabled and configured
@@ -976,7 +892,9 @@ export class IMGatewayManager extends EventEmitter {
       return Boolean(config.discord?.enabled && config.discord.botToken);
     }
     if (platform === 'nim') {
-      return this.nimGateway.isConnected();
+      // NIM runs via OpenClaw; consider it connected when enabled and configured
+      const config = this.getConfig();
+      return Boolean(config.nim?.enabled && config.nim.appKey && config.nim.account && config.nim.token);
     }
     if (platform === 'xiaomifeng') {
       return this.xiaomifengGateway.isConnected();
@@ -999,11 +917,6 @@ export class IMGatewayManager extends EventEmitter {
     return false;
   }
 
-  /**
-   * Send a notification message through a specific platform.
-   * Uses platform-specific broadcast mechanisms.
-   * Returns true if successfully sent, false if platform not connected.
-   */
   async sendNotification(platform: IMPlatform, text: string): Promise<boolean> {
     if (!this.isConnected(platform)) {
       console.warn(`[IMGatewayManager] Cannot send notification: ${platform} is not connected`);
@@ -1012,7 +925,8 @@ export class IMGatewayManager extends EventEmitter {
 
     try {
       if (platform === 'nim') {
-        await this.nimGateway.sendNotification(text);
+        // NIM runs via OpenClaw; notifications not yet supported via plugin
+        console.log('[IMGatewayManager] NIM notification via OpenClaw not yet supported');
       } else if (platform === 'qq') {
         // QQ runs via OpenClaw; notifications are handled by the qqbot plugin
         console.log('[IMGatewayManager] QQ notification via OpenClaw not yet supported');
@@ -1040,7 +954,8 @@ export class IMGatewayManager extends EventEmitter {
 
     try {
       if (platform === 'nim') {
-        await this.nimGateway.sendNotificationWithMedia(text);
+        // NIM runs via OpenClaw; notifications not yet supported via plugin
+        console.log('[IMGatewayManager] NIM notification with media via OpenClaw not yet supported');
       } else if (platform === 'qq') {
         // QQ runs via OpenClaw; notifications are handled by the qqbot plugin
         console.log('[IMGatewayManager] QQ notification with media via OpenClaw not yet supported');
@@ -1060,10 +975,6 @@ export class IMGatewayManager extends EventEmitter {
     }
   }
 
-  /**
-   * Test Telegram connectivity when running via OpenClaw runtime.
-   * Validates bot token via Telegram API (same auth probe as direct mode).
-   */
   private async testTelegramOpenClawConnectivity(
     configOverride?: Partial<IMGatewayConfig>
   ): Promise<IMConnectivityTestResult> {
@@ -1139,10 +1050,6 @@ export class IMGatewayManager extends EventEmitter {
     return { platform, testedAt, verdict, checks };
   }
 
-  /**
-   * Test Discord connectivity when running via OpenClaw runtime.
-   * Validates bot token via Discord API (/users/@me).
-   */
   private async testDiscordOpenClawConnectivity(
     configOverride?: Partial<IMGatewayConfig>
   ): Promise<IMConnectivityTestResult> {
@@ -1217,10 +1124,6 @@ export class IMGatewayManager extends EventEmitter {
     return { platform, testedAt, verdict, checks };
   }
 
-  /**
-   * Test Feishu connectivity when running via OpenClaw runtime (feishu-openclaw-plugin).
-   * Validates credentials via Feishu API (/open-apis/bot/v3/info).
-   */
   private async testFeishuOpenClawConnectivity(
     configOverride?: Partial<IMGatewayConfig>
   ): Promise<IMConnectivityTestResult> {
@@ -1310,10 +1213,6 @@ export class IMGatewayManager extends EventEmitter {
     return { platform, testedAt, verdict, checks };
   }
 
-  /**
-   * Test DingTalk connectivity when running via OpenClaw runtime.
-   * Validates credentials via DingTalk API.
-   */
   private async testDingTalkOpenClawConnectivity(
     configOverride?: Partial<IMGatewayConfig>
   ): Promise<IMConnectivityTestResult> {
@@ -1388,10 +1287,6 @@ export class IMGatewayManager extends EventEmitter {
     return { platform, testedAt, verdict, checks };
   }
 
-  /**
-   * Test WeCom connectivity when running via OpenClaw runtime.
-   * Validates config completeness; actual connection is handled by OpenClaw.
-   */
   private async testWecomOpenClawConnectivity(
     configOverride?: Partial<IMGatewayConfig>
   ): Promise<IMConnectivityTestResult> {
@@ -1428,6 +1323,58 @@ export class IMGatewayManager extends EventEmitter {
       code: 'gateway_running',
       level: 'info',
       message: '企业微信通过 OpenClaw 运行时运行，Bot 将在 OpenClaw Gateway 启动后自动连接。',
+    });
+
+    const verdict: IMConnectivityVerdict = checks.some(c => c.level === 'fail')
+      ? 'fail'
+      : checks.some(c => c.level === 'warn')
+        ? 'warn'
+        : 'pass';
+
+    return { platform, testedAt, verdict, checks };
+  }
+
+  private async testNimOpenClawConnectivity(
+    configOverride?: Partial<IMGatewayConfig>
+  ): Promise<IMConnectivityTestResult> {
+    const checks: IMConnectivityCheck[] = [];
+    const testedAt = Date.now();
+    const platform: IMPlatform = 'nim';
+
+    const mergedConfig = this.buildMergedConfig(configOverride);
+    const nimConfig = mergedConfig.nim;
+
+    if (!nimConfig?.appKey || !nimConfig?.account || !nimConfig?.token) {
+      const missing: string[] = [];
+      if (!nimConfig?.appKey) missing.push('appKey');
+      if (!nimConfig?.account) missing.push('account');
+      if (!nimConfig?.token) missing.push('token');
+      checks.push({
+        code: 'missing_credentials',
+        level: 'fail',
+        message: `缺少必要配置项: ${missing.join(', ')}`,
+        suggestion: '请补全 AppKey、Account 和 Token 后重新测试连通性。',
+      });
+      return { platform, testedAt, verdict: 'fail', checks };
+    }
+
+    checks.push({
+      code: 'auth_check',
+      level: 'pass',
+      message: `云信配置已就绪（Account: ${nimConfig.account}）。`,
+    });
+
+    checks.push({
+      code: 'gateway_running',
+      level: 'info',
+      message: '云信通过 OpenClaw 运行时运行，Bot 将在 OpenClaw Gateway 启动后自动连接。',
+    });
+
+    checks.push({
+      code: 'nim_p2p_only_hint',
+      level: 'info',
+      message: '云信 IM 当前仅支持 P2P（私聊）消息。',
+      suggestion: '请通过私聊方式向机器人账号发送消息触发对话。',
     });
 
     const verdict: IMConnectivityVerdict = checks.some(c => c.level === 'fail')
@@ -1491,6 +1438,8 @@ export class IMGatewayManager extends EventEmitter {
 
     return { platform, testedAt, verdict, checks };
   }
+
+
 
   private buildMergedConfig(configOverride?: Partial<IMGatewayConfig>): IMGatewayConfig {
     const current = this.getConfig();
@@ -1596,10 +1545,11 @@ export class IMGatewayManager extends EventEmitter {
     }
 
     if (platform === 'nim') {
-      // Use an isolated temporary NimGateway instance so the probe never
-      // touches the main gateway's state and never fires onMessageCallback.
-      await this.testNimConnectivity(config.nim);
-      return `云信鉴权通过（Account: ${config.nim.account}，SDK 登录成功）。`;
+      const { appKey, account, token } = config.nim;
+      if (!appKey || !account || !token) {
+        throw new Error('配置不完整');
+      }
+      return `云信配置已就绪（Account: ${account}）。`;
     }
 
     if (platform === 'xiaomifeng') {
@@ -1654,131 +1604,6 @@ export class IMGatewayManager extends EventEmitter {
     return '未知平台。';
   }
 
-  /**
-   * Test NIM connectivity.
-   *
-   * NIM enforces single-device login per account: if a second client logs in
-   * with the same account, the first one is kicked offline. Therefore we CANNOT
-   * create a temporary NimGateway alongside the main one.
-   *
-   * Strategy:
-   * 1. If the main nimGateway is already connected → credentials are valid,
-   *    return immediately.
-   * 2. Otherwise, **stop the main gateway first** (if it has a stale SDK
-   *    instance), then create a temporary probe instance with its own data
-   *    path. After the probe completes, fully stop it, then **restart the
-   *    main gateway** so normal message reception resumes.
-   */
-  private async testNimConnectivity(nimConfig: IMGatewayConfig['nim']): Promise<void> {
-    // Fast path: if the main gateway is already connected, credentials are valid.
-    if (this.nimGateway.isConnected()) {
-      return;
-    }
-
-    // Mutex: if a previous probe is still running, wait for it to finish first
-    // to avoid concurrent NIM SDK instances causing native crashes.
-    if (this.nimProbePromise) {
-      try {
-        await this.nimProbePromise;
-      } catch (_) { /* ignore previous probe errors */ }
-    }
-
-    // Wrap the actual probe in a tracked promise for mutex
-    this.nimProbePromise = this.executeNimProbe(nimConfig);
-    try {
-      await this.nimProbePromise;
-    } finally {
-      this.nimProbePromise = null;
-    }
-  }
-
-  /**
-   * Internal NIM probe execution (called under mutex protection).
-   */
-  private async executeNimProbe(nimConfig: IMGatewayConfig['nim']): Promise<void> {
-    // Stop the main gateway before probing to avoid kick-offline conflicts.
-    // This is a no-op if it's not running.
-    try {
-      await this.nimGateway.stop();
-    } catch (_) { /* ignore */ }
-
-    // Wait for native SDK resources to be fully released before creating a new instance.
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    const NIM_TEST_TIMEOUT_MS = 9_000;
-    let tmpGateway: NimGateway | null = new NimGateway();
-
-    // Use a unique temporary data path to avoid file-lock conflicts.
-    const tmpDataPath = path.join(
-      os.tmpdir(),
-      `lobsterai-nim-probe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    );
-    fs.mkdirSync(tmpDataPath, { recursive: true });
-
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          reject(new Error('NIM 登录超时（9s），请检查网络或凭据'));
-        }, NIM_TEST_TIMEOUT_MS);
-
-        tmpGateway!.once('connected', () => {
-          clearTimeout(timer);
-          resolve();
-        });
-
-        tmpGateway!.once('error', (err: Error) => {
-          clearTimeout(timer);
-          reject(err);
-        });
-
-        // Also listen for loginFailed which may not always emit 'error'
-        tmpGateway!.once('loginFailed', (err: any) => {
-          clearTimeout(timer);
-          const desc = err?.desc || err?.message || JSON.stringify(err);
-          reject(new Error(`NIM 登录失败: ${desc}`));
-        });
-
-        tmpGateway!.start(
-          { ...nimConfig, enabled: true },
-          { appDataPathOverride: tmpDataPath }
-        ).catch(reject);
-      });
-    } finally {
-      // Fully stop the temporary instance before doing anything else.
-      if (tmpGateway) {
-        const gw = tmpGateway;
-        tmpGateway = null;
-        try {
-          await gw.stop();
-        } catch (stopErr: any) {
-          // Ensure uninit failures never propagate as uncaught exceptions
-          console.warn('[IMGatewayManager] NIM probe tmpGateway.stop() error (ignored):', stopErr?.message || stopErr);
-        }
-      }
-
-      // Wait for native cleanup before restarting the main gateway.
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Clean up the temporary data directory after a short delay.
-      setTimeout(() => {
-        try {
-          fs.rmSync(tmpDataPath, { recursive: true, force: true });
-        } catch (_) { /* ignore */ }
-      }, 2000);
-
-      // Restart the main gateway if the NIM config says it should be enabled
-      // so that normal message reception resumes.
-      // We restart regardless of probe success: even if the probe failed,
-      // the main gateway was stopped and needs to be restarted if enabled.
-      if (nimConfig.enabled) {
-        try {
-          await this.startGateway('nim');
-        } catch (err: any) {
-          console.error('[IMGatewayManager] Failed to restart main NIM gateway after probe:', err.message);
-        }
-      }
-    }
-  }
 
   async sendConversationReply(platform: IMPlatform, conversationId: string, text: string): Promise<boolean> {
     try {
@@ -1802,8 +1627,8 @@ export class IMGatewayManager extends EventEmitter {
           return this.sendDingTalkDirectHttp(userId, text);
         }
         case 'nim':
-          await this.nimGateway.sendConversationNotification(conversationId, text);
-          return true;
+          console.log('[IMGatewayManager] NIM conversation reply via OpenClaw not yet supported');
+          return false;
         case 'xiaomifeng':
           await this.xiaomifengGateway.sendConversationNotification(conversationId, text);
           return true;
@@ -1818,9 +1643,6 @@ export class IMGatewayManager extends EventEmitter {
 
   // ─── DingTalk direct HTTP API ──────────────────────────────────────────────
 
-  /**
-   * Obtain a DingTalk access token (v2.0 API), caching it for its lifetime.
-   */
   private async getDingTalkAccessToken(clientId: string, clientSecret: string): Promise<string> {
     const now = Date.now();
     if (this.dingTalkAccessToken && this.dingTalkAccessTokenExpiry > now + 60_000) {
@@ -1845,10 +1667,6 @@ export class IMGatewayManager extends EventEmitter {
     return this.dingTalkAccessToken;
   }
 
-  /**
-   * Send a text/markdown message to a DingTalk user via the proactive messaging
-   * HTTP API, bypassing the OpenClaw gateway plugin (which lacks `cfg` context).
-   */
   private async sendDingTalkDirectHttp(userId: string, text: string): Promise<boolean> {
     const dtConfig = this.imStore.getDingTalkOpenClawConfig();
     if (!dtConfig.clientId || !dtConfig.clientSecret) {
@@ -2144,15 +1962,6 @@ export class IMGatewayManager extends EventEmitter {
     };
   }
 
-  /**
-   * Attempt to construct a DingTalk delivery route by parsing JSON SessionContext
-   * embedded in OpenClaw session keys.  This covers the case where the OpenClaw
-   * session entry itself lacks a deliveryContext (e.g. cron-triggered runs that
-   * reuse an existing session without full delivery metadata).
-   *
-   * Session key format (since dingtalk-connector v0.7.5):
-   *   agent:{agentId}:openai-user:{"channel":"dingtalk-connector","accountid":"...","chattype":"direct","peerid":"...","sendername":"..."}
-   */
   private buildDingTalkRouteFromSessionKeys(
     sessionKeys: string[],
   ): { sessionKey: string; route: OpenClawDeliveryRoute } | null {
@@ -2206,6 +2015,19 @@ export class IMGatewayManager extends EventEmitter {
       };
     }
     return null;
+  }
+
+  /**
+   * Fetch the OpenClaw config schema (JSON Schema + uiHints) from the gateway.
+   * Returns { schema, uiHints } or null if the gateway is unavailable.
+   */
+  async getOpenClawConfigSchema(): Promise<{ schema: Record<string, unknown>; uiHints: Record<string, Record<string, unknown>> } | null> {
+    try {
+      return await this.requestOpenClawGateway<{ schema: Record<string, unknown>; uiHints: Record<string, Record<string, unknown>> }>('config.schema', {});
+    } catch (err: any) {
+      console.warn('[IMGatewayManager] Failed to fetch config.schema from OpenClaw gateway:', err.message);
+      return null;
+    }
   }
 
   private async requestOpenClawGateway<T = Record<string, unknown>>(

@@ -33,6 +33,7 @@ const CoworkView: React.FC<CoworkViewProps> = ({ onRequestAppSettings, onShowSki
   const isMac = window.electron.platform === 'darwin';
   const [isInitialized, setIsInitialized] = useState(false);
   const [openClawStatus, setOpenClawStatus] = useState<OpenClawEngineStatus | null>(null);
+  const [isRestartingGateway, setIsRestartingGateway] = useState(false);
   // Track if we're starting a session to prevent duplicate submissions
   const isStartingRef = useRef(false);
   // Track pending start request so stop can cancel delayed startup.
@@ -69,9 +70,6 @@ const CoworkView: React.FC<CoworkViewProps> = ({ onRequestAppSettings, onShowSki
   };
 
   const resolveEngineStatusText = (status: OpenClawEngineStatus): string => {
-    if (status.message?.trim()) {
-      return status.message.trim();
-    }
     switch (status.phase) {
       case 'not_installed':
         return i18nService.t('coworkOpenClawNotInstalledNotice');
@@ -92,6 +90,18 @@ const CoworkView: React.FC<CoworkViewProps> = ({ onRequestAppSettings, onShowSki
   const isOpenClawReadyForSession = (status: OpenClawEngineStatus | null): boolean => {
     if (!status) return false;
     return status.phase === 'running' || status.phase === 'ready';
+  };
+
+  const handleRestartGateway = async () => {
+    if (isRestartingGateway) return;
+    setIsRestartingGateway(true);
+    try {
+      await coworkService.restartOpenClawGateway();
+    } catch (error) {
+      console.error('[CoworkView] Failed to restart gateway:', error);
+    } finally {
+      setIsRestartingGateway(false);
+    }
   };
 
   useEffect(() => {
@@ -390,11 +400,6 @@ const CoworkView: React.FC<CoworkViewProps> = ({ onRequestAppSettings, onShowSki
 
   const shouldShowEngineStatus = Boolean(isOpenClawEngine && openClawStatus && openClawStatus.phase !== 'running');
   const isEngineError = openClawStatus?.phase === 'error';
-  const shouldShowGoToSettingsInstall = openClawStatus
-    ? (openClawStatus.phase === 'not_installed'
-      || openClawStatus.phase === 'installing'
-      || openClawStatus.phase === 'error')
-    : false;
   const isEngineReady = isOpenClawEngine
     ? isOpenClawReadyForSession(openClawStatus)
     : true;
@@ -480,10 +485,11 @@ const CoworkView: React.FC<CoworkViewProps> = ({ onRequestAppSettings, onShowSki
               )}
               <button
                 type="button"
-                onClick={() => onRequestAppSettings?.({ initialTab: 'coworkAgentEngine' })}
-                className="mt-1 rounded-lg px-3 py-1.5 text-xs font-medium bg-claude-accent text-white hover:bg-claude-accentHover transition-colors"
+                onClick={handleRestartGateway}
+                disabled={isRestartingGateway || openClawStatus.phase === 'starting'}
+                className="mt-1 rounded-lg px-3 py-1.5 text-xs font-medium bg-claude-accent text-white hover:bg-claude-accentHover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {i18nService.t('coworkOpenClawGoToSettingsInstall')}
+                {i18nService.t('coworkOpenClawRestartGateway')}
               </button>
             </div>
           </div>
@@ -528,17 +534,16 @@ const CoworkView: React.FC<CoworkViewProps> = ({ onRequestAppSettings, onShowSki
                       </span>
                     )}
                   </div>
-                  {shouldShowGoToSettingsInstall && (
-                    <button
-                      type="button"
-                      onClick={() => onRequestAppSettings?.({ initialTab: 'coworkAgentEngine' })}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${isEngineError
-                        ? 'bg-red-600 text-white hover:bg-red-700'
-                        : 'bg-amber-600 text-white hover:bg-amber-700'}`}
-                    >
-                      {i18nService.t('coworkOpenClawGoToSettingsInstall')}
+                  <button
+                    type="button"
+                    onClick={handleRestartGateway}
+                    disabled={isRestartingGateway}
+                    className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isEngineError
+                      ? 'bg-red-600 text-white hover:bg-red-700'
+                      : 'bg-amber-600 text-white hover:bg-amber-700'}`}
+                  >
+                      {i18nService.t('coworkOpenClawRestartGateway')}
                     </button>
-                  )}
                 </div>
               </div>
             )}
