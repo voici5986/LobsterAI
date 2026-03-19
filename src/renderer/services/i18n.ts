@@ -429,6 +429,20 @@ const translations: Record<LanguageType, Record<string, string>> = {
     noRecentFolders: '暂无最近文件夹',
     coworkOpenFolder: '打开文件夹',
 
+    // Cowork 错误消息
+    coworkErrorAuthInvalid: 'API 密钥无效或已过期，请在设置中检查并更新您的 API 密钥。',
+    coworkErrorInsufficientBalance: 'API 余额不足，请充值后重试。',
+    coworkErrorInputTooLong: '输入内容过长，超出模型上下文限制，请缩短对话内容后重试。',
+    coworkErrorCouldNotProcessPdf: '无法处理 PDF 文件。请尝试将 PDF 转换为文本格式后重新发送。',
+    coworkErrorModelNotFound: '请求的模型不存在或不可用，请在设置中检查模型配置。',
+    coworkErrorGatewayDisconnected: 'AI 引擎连接中断，请重试。如果问题持续，请尝试重启应用。',
+    coworkErrorServiceRestart: 'AI 引擎正在重启，请稍后重试。',
+    coworkErrorGatewayDraining: 'AI 引擎正在重启中，请稍等片刻后重试。',
+    coworkErrorNetworkError: '网络连接失败，请检查网络设置后重试。',
+    coworkErrorRateLimit: '请求过于频繁，请稍后再试。',
+    coworkErrorContentFiltered: '内容未通过安全审核，请修改后重试。',
+    coworkErrorServerError: '服务端出现错误，请稍后重试。',
+
     // Skills
     skills: '技能',
     searchSkills: '搜索技能',
@@ -1354,6 +1368,20 @@ const translations: Record<LanguageType, Record<string, string>> = {
     coworkSelectFolderFirst: 'Please select a task folder before submitting',
     noRecentFolders: 'No recent folders',
     coworkOpenFolder: 'Open folder',
+
+    // Cowork error messages
+    coworkErrorAuthInvalid: 'Invalid or expired API key. Please check and update your API key in settings.',
+    coworkErrorInsufficientBalance: 'Insufficient API balance. Please top up and try again.',
+    coworkErrorInputTooLong: 'Input too long, exceeding model context limit. Please shorten the conversation and try again.',
+    coworkErrorCouldNotProcessPdf: 'Unable to process the PDF file. Please try converting the PDF to text format and resend.',
+    coworkErrorModelNotFound: 'The requested model does not exist or is unavailable. Please check the model configuration in settings.',
+    coworkErrorGatewayDisconnected: 'AI engine connection lost. Please retry. If the issue persists, try restarting the app.',
+    coworkErrorServiceRestart: 'AI engine is restarting. Please try again later.',
+    coworkErrorGatewayDraining: 'AI engine is restarting. Please wait a moment and try again.',
+    coworkErrorNetworkError: 'Network connection failed. Please check your network settings and try again.',
+    coworkErrorRateLimit: 'Too many requests. Please try again later.',
+    coworkErrorContentFiltered: 'Content did not pass the safety review. Please modify and try again.',
+    coworkErrorServerError: 'Server error occurred. Please try again later.',
 
     // Skills
     skills: 'Skills',

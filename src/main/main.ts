@@ -988,6 +988,8 @@ const bindCoworkRuntimeForwarder = (): void => {
   });
 
   runtime.on('error', (sessionId: string, error: string) => {
+    // Mark session as error in store so the .catch() fallback can detect duplicates.
+    try { getCoworkStore().updateSession(sessionId, { status: 'error' }); } catch { /* ignore */ }
     const windows = BrowserWindow.getAllWindows();
     windows.forEach((win) => {
       if (win.isDestroyed()) return;
@@ -2022,9 +2024,11 @@ if (!gotTheLock) {
         imageAttachments: options.imageAttachments,
       }).catch(error => {
         console.error('Cowork session error:', error);
-        // Ensure the renderer is notified so it can clear the streaming state.
-        // Without this, a gateway disconnect (or similar async failure) leaves
-        // the UI permanently stuck in "streaming" mode.
+        // The engine router already emits an 'error' event (handled at line ~990)
+        // which sends cowork:stream:error to the renderer. Only send here if the
+        // session hasn't been marked as error yet, to avoid duplicate messages.
+        const existing = coworkStoreInstance.getSession(session.id);
+        if (existing?.status === 'error') return;
         const errorMessage = error instanceof Error ? error.message : String(error);
         const windows = BrowserWindow.getAllWindows();
         windows.forEach((win) => {
@@ -2073,9 +2077,11 @@ if (!gotTheLock) {
         imageAttachments: options.imageAttachments,
       }).catch(error => {
         console.error('Cowork continue error:', error);
-        // Ensure the renderer is notified so it can clear the streaming state.
-        // Without this, a gateway disconnect (or similar async failure) leaves
-        // the UI permanently stuck in "streaming" mode.
+        // The engine router already emits an 'error' event (handled at line ~990)
+        // which sends cowork:stream:error to the renderer. Only send here if the
+        // session hasn't been marked as error yet, to avoid duplicate messages.
+        const existing = getCoworkStore().getSession(options.sessionId);
+        if (existing?.status === 'error') return;
         const errorMessage = error instanceof Error ? error.message : String(error);
         const windows = BrowserWindow.getAllWindows();
         windows.forEach((win) => {

@@ -2727,6 +2727,25 @@ export class OpenClawRuntimeAdapter extends EventEmitter implements CoworkRuntim
       }
     }
 
+    // When cursor > 0, tail-overlap and last-user-anchor (above) are the correct
+    // content-based strategies for detecting a sliding history window.  If both
+    // failed the mismatch is caused by duplicates in the local store, not by
+    // genuinely new gateway messages.  Trust the cursor — it was set to
+    // historyEntries.length at the end of the previous sync — instead of falling
+    // through to forward-match, which can produce wildly wrong firstNewIdx values
+    // when local entries are polluted (causing either an infinite re-sync loop
+    // when cursor == historyEntries.length, or a burst of old messages being
+    // re-synced when cursor < historyEntries.length).
+    //
+    // forward-match is still used when cursor == 0 (initial sync / after restart)
+    // because there is no cursor history to rely on.
+    if (cursor > 0) {
+      if (cursor >= historyEntries.length) {
+        return { firstNewIdx: historyEntries.length, strategy: 'cursor-stable' };
+      }
+      return { firstNewIdx: cursor, strategy: 'cursor-fallback' };
+    }
+
     let localIdx = 0;
     let forwardFirstNewIdx = 0;
     for (let idx = 0; idx < historyEntries.length; idx += 1) {
