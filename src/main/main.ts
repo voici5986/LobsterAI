@@ -476,8 +476,12 @@ const requestCalendarPermission = async (): Promise<boolean> => {
 
 
 // 配置应用
-if (isLinux) {
+// Linux/Windows 禁用 Chromium 沙箱：桌面应用渲染自有代码，风险可控；
+// Windows 下以管理员运行时沙箱无法降权会导致 GPU 进程启动失败 (error_code=18)
+if (isLinux || isWindows) {
   app.commandLine.appendSwitch('no-sandbox');
+}
+if (isLinux) {
   app.commandLine.appendSwitch('disable-dev-shm-usage');
 }
 if (disableGpu) {
