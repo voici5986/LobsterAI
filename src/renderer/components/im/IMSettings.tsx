@@ -1095,7 +1095,7 @@ const IMSettings: React.FC = () => {
                 <div
                   className={`w-7 h-4 rounded-full flex items-center transition-colors ${
                     isEnabled
-                      ? (isConnected ? 'bg-green-500' : 'bg-yellow-500')
+                      ? 'bg-primary'
                       : 'bg-gray-400 dark:bg-gray-600'
                   } ${(!canToggle || togglingPlatform === platform) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                   onClick={(e) => {
