@@ -4474,7 +4474,10 @@ if (!gotTheLock) {
       const hadEnterprise = store.get('enterprise_config');
       if (hadEnterprise) {
         store.delete('enterprise_config');
-        console.log('[Enterprise] config package removed, cleared enterprise mode');
+        // Reset executionMode to default so sandbox mode reverts to "off".
+        const cs = getCoworkStore();
+        cs.setConfig({ executionMode: 'local' });
+        console.log('[Enterprise] config package removed, cleared enterprise mode and reset executionMode');
       }
     }
 
