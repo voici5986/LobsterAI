@@ -1,0 +1,2 @@
+#!/bin/bash
+bash ~/.git-ai/bin/git-hooks.sh prepare-commit-msg "$1" "$2" "$3"
