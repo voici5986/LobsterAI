@@ -58,7 +58,7 @@ At its core is **Cowork mode** — it executes tools, manipulates files, and run
 ```bash
 # Clone the repository
 git clone https://github.com/netease-youdao/LobsterAI.git
-cd lobsterai
+cd LobsterAI
 
 # Install dependencies
 npm install
