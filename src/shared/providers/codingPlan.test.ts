@@ -29,17 +29,17 @@ describe('resolveCodingPlanBaseUrl', () => {
     });
   });
 
-  describe('Moonshot — no preferredCodingPlanFormat (respects caller format)', () => {
+  describe('Moonshot — preferredCodingPlanFormat: anthropic', () => {
     test('returns anthropic coding plan URL when caller passes anthropic', () => {
       const result = resolveCodingPlanBaseUrl(ProviderName.Moonshot, true, 'anthropic', '');
       expect(result.baseUrl).toBe('https://api.kimi.com/coding');
       expect(result.effectiveFormat).toBe('anthropic');
     });
 
-    test('returns openai coding plan URL when caller passes openai', () => {
+    test('overrides caller openai format to anthropic', () => {
       const result = resolveCodingPlanBaseUrl(ProviderName.Moonshot, true, 'openai', '');
-      expect(result.baseUrl).toBe('https://api.kimi.com/coding/v1');
-      expect(result.effectiveFormat).toBe('openai');
+      expect(result.baseUrl).toBe('https://api.kimi.com/coding');
+      expect(result.effectiveFormat).toBe('anthropic');
     });
   });
 

@@ -339,14 +339,6 @@ const normalizeBaseUrlPath = (rawBaseUrl: string, pathName: string): string => {
   }
 };
 
-const normalizeMoonshotBaseUrl = (rawBaseUrl: string): string => {
-  const trimmed = rawBaseUrl.trim();
-  if (!trimmed) {
-    return 'https://api.moonshot.cn/v1';
-  }
-  return normalizeBaseUrlPath(trimmed, '/v1');
-};
-
 /**
  * Strip the `/chat/completions` endpoint suffix from a base URL so that the
  * OpenClaw gateway can append its own path without duplication.
@@ -364,14 +356,6 @@ const stripChatCompletionsSuffix = (rawBaseUrl: string): string => {
     return normalized.slice(0, -'/chat/completions'.length).replace(/\/+$/, '');
   }
   return normalized;
-};
-
-const normalizeKimiCodingBaseUrl = (rawBaseUrl: string): string => {
-  const trimmed = rawBaseUrl.trim();
-  if (!trimmed) {
-    return 'https://api.kimi.com/coding';
-  }
-  return normalizeBaseUrlPath(trimmed, '/coding');
 };
 
 const normalizeGeminiBaseUrl = (rawBaseUrl: string): string => {
@@ -423,25 +407,10 @@ const PROVIDER_REGISTRY: Record<string, ProviderDescriptor> = {
     },
   },
 
-  [`${ProviderName.Moonshot}:codingPlan`]: {
-    providerId: OpenClawProviderId.KimiCoding,
-    resolveApi: () => OpenClawApiConst.AnthropicMessages as OpenClawProviderApi,
-    normalizeBaseUrl: normalizeKimiCodingBaseUrl,
-    resolveSessionModelId: () => 'k2p5',
-    modelDefaults: {
-      reasoning: true,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 256000,
-      maxTokens: 8192,
-    },
-  },
-
   [ProviderName.Moonshot]: {
     providerId: OpenClawProviderId.Moonshot,
-    resolveApi: () => OpenClawApiConst.OpenAICompletions as OpenClawProviderApi,
-    normalizeBaseUrl: normalizeMoonshotBaseUrl,
-    resolveModelReasoning: (modelId, codingPlanEnabled) =>
-      codingPlanEnabled ? undefined : modelId.includes('thinking'),
+    resolveApi: ({ apiType }) => mapApiTypeToOpenClawApi(apiType),
+    normalizeBaseUrl: stripChatCompletionsSuffix,
     modelDefaults: {
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: 256000,
@@ -493,12 +462,6 @@ const PROVIDER_REGISTRY: Record<string, ProviderDescriptor> = {
 
   [ProviderName.Volcengine]: {
     providerId: OpenClawProviderId.Volcengine,
-    resolveApi: ({ apiType }) => mapApiTypeToOpenClawApi(apiType),
-    normalizeBaseUrl: stripChatCompletionsSuffix,
-  },
-
-  [`${ProviderName.Volcengine}:codingPlan`]: {
-    providerId: OpenClawProviderId.VolcenginePlan,
     resolveApi: ({ apiType }) => mapApiTypeToOpenClawApi(apiType),
     normalizeBaseUrl: stripChatCompletionsSuffix,
   },
@@ -841,6 +804,13 @@ export class OpenClawConfigSync {
     const hasMcpBridgePlugin = isBundledPluginAvailable('mcp-bridge');
     const hasAskUserPlugin = isBundledPluginAvailable('ask-user-question');
 
+    // Detect if any provider uses Qwen/Aliyun DashScope URLs — OpenClaw auto-injects
+    // qwen-portal-auth plugin for these, so we must declare it to prevent config diff loops.
+    const hasQwenProvider = Object.values(allProvidersMap).some((p) => {
+      const url = (p as { baseUrl?: string }).baseUrl || '';
+      return url.includes('dashscope.aliyuncs.com') || url.includes('aliyuncs.com/compatible-mode');
+    });
+
     const dingTalkInstances = this.getDingTalkInstances();
     // DingTalk runs through OpenClaw plugin but still needs the gateway HTTP endpoint (chatCompletions)
     const hasDingTalkOpenClaw = dingTalkInstances.some(i => i.enabled && i.clientId);
@@ -953,6 +923,11 @@ export class OpenClawConfigSync {
             : {}),
           ...(hasAskUserPlugin
             ? { 'ask-user-question': { enabled: true } }
+            : {}),
+          // OpenClaw auto-injects qwen-portal-auth for Qwen/DashScope URLs; declare it
+          // explicitly so configSync doesn't remove it and trigger restart loops.
+          ...(hasQwenProvider
+            ? { 'qwen-portal-auth': { enabled: true } }
             : {}),
         };
 

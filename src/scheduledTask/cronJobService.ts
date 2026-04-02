@@ -239,6 +239,7 @@ function toGatewayPayload(payload: ScheduledTaskPayload): GatewayPayload {
     ...(typeof payload.timeoutSeconds === 'number'
       ? { timeoutSeconds: payload.timeoutSeconds }
       : {}),
+    ...(payload.model ? { model: payload.model } : {}),
   };
 }
 
@@ -350,6 +351,7 @@ export function mapGatewayJob(job: GatewayJob): ScheduledTask {
           ...(typeof job.payload.timeoutSeconds === 'number'
             ? { timeoutSeconds: job.payload.timeoutSeconds }
             : {}),
+          ...(job.payload.model ? { model: job.payload.model } : {}),
         },
     delivery: {
       mode: delivery.mode,
@@ -653,7 +655,7 @@ export class CronJobService {
     if (!this.polling) return;
 
     try {
-      await this.ensureGatewayReady();
+      // await this.ensureGatewayReady();
       const client = this.getGatewayClient();
       if (!client) return;
 

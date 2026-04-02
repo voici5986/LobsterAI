@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { useSelector } from 'react-redux';
+import { RootState } from '../../store';
 import { scheduledTaskService } from '../../services/scheduledTask';
 import { i18nService } from '../../services/i18n';
+import type { Model } from '../../store/slices/modelSlice';
 import type {
   ScheduledTask,
   ScheduledTaskChannelOption,
@@ -9,6 +12,14 @@ import type {
 } from '../../../scheduledTask/types';
 import { formatScheduleLabel, type PlanType, scheduleToPlanInfo } from './utils';
 import { PlatformRegistry } from '@shared/platform';
+import ModelSelector from '../ModelSelector';
+import { ProviderRegistry, OpenClawProviderId } from '@shared/providers/constants';
+
+function toOpenClawModelRef(model: { id: string; providerKey?: string; isServerModel?: boolean }): string {
+  if (model.isServerModel) return `${OpenClawProviderId.LobsteraiServer}/${model.id}`;
+  const openClawId = ProviderRegistry.getOpenClawProviderId(model.providerKey ?? '');
+  return `${openClawId}/${model.id}`;
+}
 
 interface TaskFormProps {
   mode: 'create' | 'edit';
@@ -27,11 +38,12 @@ interface FormState {
   hour: number;
   minute: number;
   second: number;
-  weekday: number;
+  weekdays: number[];
   monthDay: number;
   payloadText: string;
   notifyChannel: string;
   notifyTo: string;
+  modelId: string;
 }
 
 function nowDefaults() {
@@ -51,11 +63,12 @@ const DEFAULT_FORM_STATE: FormState = {
   description: '',
   planType: 'daily',
   ...nowDefaults(),
-  weekday: 1,
+  weekdays: [1, 2, 3, 4, 5],
   monthDay: 1,
   payloadText: '',
   notifyChannel: 'none',
   notifyTo: '',
+  modelId: '',
 };
 
 function isIMChannel(channel: string): boolean {
@@ -76,11 +89,12 @@ function createFormState(task?: ScheduledTask): FormState {
     hour: planInfo.hour,
     minute: planInfo.minute,
     second: planInfo.second,
-    weekday: planInfo.weekday,
+    weekdays: planInfo.weekdays,
     monthDay: planInfo.monthDay,
     payloadText: task.payload.kind === 'systemEvent' ? task.payload.text : task.payload.message,
     notifyChannel: task.delivery.channel || 'none',
     notifyTo: task.delivery.to || '',
+    modelId: task.payload.kind === 'agentTurn' ? (task.payload.model ?? '') : '',
   };
 }
 
@@ -93,29 +107,25 @@ function buildScheduleInput(form: FormState): ScheduledTaskInput['schedule'] {
   const min = String(form.minute);
   const hr = String(form.hour);
 
+  if (form.planType === 'hourly') {
+    return { kind: 'cron', expr: `${min} * * * *` };
+  }
+
   if (form.planType === 'daily') {
     return { kind: 'cron', expr: `${min} ${hr} * * *` };
   }
 
   if (form.planType === 'weekly') {
-    return { kind: 'cron', expr: `${min} ${hr} * * ${form.weekday}` };
+    const dowField = [...form.weekdays].sort((a, b) => a - b).join(',');
+    return { kind: 'cron', expr: `${min} ${hr} * * ${dowField}` };
   }
 
   return { kind: 'cron', expr: `${min} ${hr} ${form.monthDay} * *` };
 }
 
-const WEEKDAY_KEYS = [
-  'scheduledTasksFormWeekSun',
-  'scheduledTasksFormWeekMon',
-  'scheduledTasksFormWeekTue',
-  'scheduledTasksFormWeekWed',
-  'scheduledTasksFormWeekThu',
-  'scheduledTasksFormWeekFri',
-  'scheduledTasksFormWeekSat',
-] as const;
-
 const TaskForm: React.FC<TaskFormProps> = ({ mode, task, onCancel, onSaved }) => {
   const [form, setForm] = useState<FormState>(() => createFormState(task));
+  const availableModels = useSelector((state: RootState) => state.model.availableModels);
   const [channelOptions, setChannelOptions] = useState<ScheduledTaskChannelOption[]>(() => {
     const base: ScheduledTaskChannelOption[] = [];
     const savedChannel = task?.delivery.channel;
@@ -204,6 +214,10 @@ const TaskForm: React.FC<TaskFormProps> = ({ mode, task, onCancel, onSaved }) =>
       nextErrors.schedule = i18nService.t('scheduledTasksFormValidationTimeRequired');
     }
 
+    if (form.planType === 'weekly' && form.weekdays.length === 0) {
+      nextErrors.schedule = i18nService.t('scheduledTasksFormValidationWeekdayRequired');
+    }
+
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   };
@@ -228,6 +242,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ mode, task, onCancel, onSaved }) =>
         payload: {
           kind: 'agentTurn',
           message: form.payloadText.trim(),
+          ...(form.modelId ? { model: form.modelId } : {}),
         },
         delivery: form.notifyChannel === 'none'
           ? { mode: 'none' }
@@ -252,9 +267,18 @@ const TaskForm: React.FC<TaskFormProps> = ({ mode, task, onCancel, onSaved }) =>
     }
   };
 
-  const inputClass = 'w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50';
-  const labelClass = 'block text-sm font-medium text-foreground mb-1';
+  const inputClass = 'w-full rounded-lg border dark:border-claude-darkBorder border-claude-border dark:bg-claude-darkSurface bg-white px-3 py-2 text-sm dark:text-claude-darkText text-claude-text focus:outline-none focus:ring-2 focus:ring-claude-accent/50';
+  const textareaInputClass = 'w-full rounded-t-lg px-3 py-2 text-sm dark:text-claude-darkText text-claude-text focus:outline-none resize-none bg-transparent';
+  const labelClass = 'block text-sm font-medium dark:text-claude-darkText text-claude-text mb-1';
   const errorClass = 'text-xs text-red-500 mt-1';
+
+  const selectedModelValue: Model | null = form.modelId
+    ? availableModels.find((m) => toOpenClawModelRef(m) === form.modelId) ?? null
+    : null;
+
+  const handleModelChange = (model: Model | null) => {
+    updateForm({ modelId: model ? toOpenClawModelRef(model) : '' });
+  };
 
   const timeValue = `${String(form.hour).padStart(2, '0')}:${String(form.minute).padStart(2, '0')}`;
   const handleTimeChange = (value: string) => {
@@ -288,6 +312,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ mode, task, onCancel, onSaved }) =>
         className={`${inputClass} flex-1 min-w-0`}
       >
         <option value="once">{i18nService.t('scheduledTasksFormScheduleModeOnce')}</option>
+        <option value="hourly">{i18nService.t('scheduledTasksFormScheduleModeHourly')}</option>
         <option value="daily">{i18nService.t('scheduledTasksFormScheduleModeDaily')}</option>
         <option value="weekly">{i18nService.t('scheduledTasksFormScheduleModeWeekly')}</option>
         <option value="monthly">{i18nService.t('scheduledTasksFormScheduleModeMonthly')}</option>
@@ -347,27 +372,90 @@ const TaskForm: React.FC<TaskFormProps> = ({ mode, task, onCancel, onSaved }) =>
       );
     }
 
-    if (form.planType === 'weekly') {
+    if (form.planType === 'hourly') {
       return (
         <div>
           <label className={labelClass}>{i18nService.t('scheduledTasksFormScheduleType')}</label>
           <div className="flex items-center gap-3">
             {planSelect}
             <select
-              value={form.weekday}
-              onChange={(e) => updateForm({ weekday: Number(e.target.value) })}
-              className={`${inputClass} flex-1 min-w-0`}
+              value={form.minute}
+              onChange={(e) => updateForm({ minute: Number(e.target.value) })}
+              className="w-20 shrink-0 rounded-lg border dark:border-claude-darkBorder border-claude-border dark:bg-claude-darkSurface bg-white px-3 py-2 text-sm dark:text-claude-darkText text-claude-text text-center focus:outline-none focus:ring-2 focus:ring-claude-accent/50"
             >
-              {WEEKDAY_KEYS.map((key, idx) => (
-                <option key={idx} value={idx}>{i18nService.t(key)}</option>
+              {Array.from({ length: 60 }, (_, i) => (
+                <option key={i} value={i}>{String(i).padStart(2, '0')}</option>
               ))}
             </select>
+            <span className="shrink-0 text-sm dark:text-claude-darkTextSecondary text-claude-textSecondary">{i18nService.t('scheduledTasksFormHourlyMinuteSuffix')}</span>
+          </div>
+        </div>
+      );
+    }
+
+    if (form.planType === 'weekly') {
+      // Locale-aware weekday order:
+      // zh: Mon(1)→Sun(0) — Chinese convention starts with Monday
+      // en: Sun(0)→Sat(6) — English convention starts with Sunday
+      const WEEKDAY_SHORT_LABELS: [string, number][] =
+        i18nService.getLanguage() === 'zh'
+          ? [
+              ['scheduledTasksFormWeekShortMon', 1],
+              ['scheduledTasksFormWeekShortTue', 2],
+              ['scheduledTasksFormWeekShortWed', 3],
+              ['scheduledTasksFormWeekShortThu', 4],
+              ['scheduledTasksFormWeekShortFri', 5],
+              ['scheduledTasksFormWeekShortSat', 6],
+              ['scheduledTasksFormWeekShortSun', 0],
+            ]
+          : [
+              ['scheduledTasksFormWeekShortSun', 0],
+              ['scheduledTasksFormWeekShortMon', 1],
+              ['scheduledTasksFormWeekShortTue', 2],
+              ['scheduledTasksFormWeekShortWed', 3],
+              ['scheduledTasksFormWeekShortThu', 4],
+              ['scheduledTasksFormWeekShortFri', 5],
+              ['scheduledTasksFormWeekShortSat', 6],
+            ];
+
+      const toggleWeekday = (day: number) => {
+        const current = form.weekdays;
+        const next = current.includes(day)
+          ? current.filter((d) => d !== day)
+          : [...current, day];
+        updateForm({ weekdays: next });
+      };
+
+      return (
+        <div>
+          <label className={labelClass}>{i18nService.t('scheduledTasksFormScheduleType')}</label>
+          <div className="flex items-center gap-3">
+            {planSelect}
             <input
               type="time"
               value={timeValue}
               onChange={(e) => handleTimeChange(e.target.value)}
               className={`${inputClass} flex-1 min-w-0`}
             />
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            {WEEKDAY_SHORT_LABELS.map(([key, dayValue]) => {
+              const selected = form.weekdays.includes(dayValue);
+              return (
+                <button
+                  key={dayValue}
+                  type="button"
+                  onClick={() => toggleWeekday(dayValue)}
+                  className={`w-9 h-9 rounded-full text-sm font-medium transition-colors ${
+                    selected
+                      ? 'bg-claude-text dark:bg-claude-darkText text-white dark:text-claude-darkBg'
+                      : 'border dark:border-claude-darkBorder border-claude-border dark:text-claude-darkTextSecondary text-claude-textSecondary hover:bg-claude-surfaceHover dark:hover:bg-claude-darkSurfaceHover'
+                  }`}
+                >
+                  {i18nService.t(key)}
+                </button>
+              );
+            })}
           </div>
         </div>
       );
@@ -469,12 +557,23 @@ const TaskForm: React.FC<TaskFormProps> = ({ mode, task, onCancel, onSaved }) =>
         <label className={labelClass}>
           {i18nService.t('scheduledTasksFormPayloadTextAgent')}
         </label>
-        <textarea
-          value={form.payloadText}
-          onChange={(event) => updateForm({ payloadText: event.target.value })}
-          className={`${inputClass} h-28 resize-none`}
-          placeholder={i18nService.t('scheduledTasksFormPromptPlaceholder')}
-        />
+        <div className="rounded-lg border dark:border-claude-darkBorder border-claude-border dark:bg-claude-darkSurface bg-white focus-within:ring-1 focus-within:ring-claude-accent/40 focus-within:border-claude-accent">
+          <textarea
+            value={form.payloadText}
+            onChange={(event) => updateForm({ payloadText: event.target.value })}
+            className={textareaInputClass}
+            placeholder={i18nService.t('scheduledTasksFormPromptPlaceholder')}
+            rows={4}
+          />
+          <div className="flex items-center px-2 py-1">
+            <ModelSelector
+              dropdownDirection="up"
+              value={selectedModelValue}
+              onChange={handleModelChange}
+              defaultLabel={i18nService.t('scheduledTasksFormModelDefault')}
+            />
+          </div>
+        </div>
         {errors.payloadText && <p className={errorClass}>{errors.payloadText}</p>}
       </div>
 
