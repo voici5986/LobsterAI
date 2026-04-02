@@ -1105,11 +1105,16 @@ const AssistantMessageItem: React.FC<{
         />
       </div>
       {showCopyButton && (
-        <div className="flex items-center gap-1.5 mt-1">
-          <CopyButton
-            content={displayContent}
-            visible={isHovered}
-          />
+        <div className="mt-1">
+          <p className="text-[10px] text-muted opacity-50 select-none mb-0.5">
+            {i18nService.t('aiGeneratedDisclaimer')}
+          </p>
+          <div className="flex items-center gap-1.5">
+            <CopyButton
+              content={displayContent}
+              visible={isHovered}
+            />
+          </div>
         </div>
       )}
     </div>
@@ -2145,7 +2150,7 @@ const CoworkSessionDetail: React.FC<CoworkSessionDetailProps> = ({
                 resolveLocalFilePath={resolveLocalFilePath}
                 mapDisplayText={mapDisplayText}
                 showTypingIndicator={showTypingIndicator}
-                showCopyButtons={!isStreaming}
+                showCopyButtons={!isStreaming || !isLastTurn}
               />
             </div>
           )}
@@ -2609,6 +2614,9 @@ const CoworkSessionDetail: React.FC<CoworkSessionDetailProps> = ({
             sessionId={currentSession?.id}
           />
         </div>
+        <p className="text-center text-[10px] text-muted opacity-50 mt-2 mb-[-8px] select-none">
+          {i18nService.t('aiGeneratedDisclaimer')}
+        </p>
       </div>
     </div>
   );
