@@ -206,7 +206,7 @@ const CoworkPromptInput = React.forwardRef<CoworkPromptInputRef, CoworkPromptInp
       window.removeEventListener('cowork:focus-input', handleFocusInput);
       if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
     };
-  }, []);
+  }, [dispatch, draftKey]);
 
   useEffect(() => {
     if (workingDirectory?.trim()) {
