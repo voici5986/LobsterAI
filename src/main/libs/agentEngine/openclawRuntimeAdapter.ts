@@ -3,37 +3,37 @@ import { app, BrowserWindow } from 'electron';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
-import { pathToFileURL } from 'url';
-import type { PermissionResult } from '@anthropic-ai/claude-agent-sdk';
-import type { CoworkMessage, CoworkSession, CoworkSessionStatus, CoworkExecutionMode, CoworkStore } from '../../coworkStore';
+
+import type { CoworkExecutionMode, CoworkMessage, CoworkSession, CoworkSessionStatus, CoworkStore } from '../../coworkStore';
+import { t } from '../../i18n';
+import { getCommandDangerLevel,isDeleteCommand } from '../commandSafety';
+import { setCoworkProxySessionId } from '../coworkOpenAICompatProxy';
+import { extractOpenClawAssistantStreamText } from '../openclawAssistantText';
+import {
+  buildManagedSessionKey,
+  isManagedSessionKey,
+  type OpenClawChannelSessionSync,
+  parseChannelSessionKey,
+  parseManagedSessionKey,
+} from '../openclawChannelSessionSync';
+import { OPENCLAW_AGENT_TIMEOUT_SECONDS } from '../openclawConfigSync';
 import {
   OpenClawEngineManager,
   type OpenClawGatewayConnectionInfo,
 } from '../openclawEngineManager';
+import {
+  extractGatewayHistoryEntries,
+  extractGatewayMessageText,
+} from '../openclawHistory';
+import { buildOpenClawLocalTimeContextPrompt } from '../openclawLocalTimeContextPrompt';
 import type {
   CoworkContinueOptions,
   CoworkRuntime,
   CoworkRuntimeEvents,
   CoworkStartOptions,
   PermissionRequest,
+  PermissionResult,
 } from './types';
-import {
-  buildManagedSessionKey,
-  type OpenClawChannelSessionSync,
-  isManagedSessionKey,
-  parseManagedSessionKey,
-  parseChannelSessionKey,
-} from '../openclawChannelSessionSync';
-import {
-  extractGatewayHistoryEntries,
-  extractGatewayMessageText,
-} from '../openclawHistory';
-import { extractOpenClawAssistantStreamText } from '../openclawAssistantText';
-import { buildOpenClawLocalTimeContextPrompt } from '../openclawLocalTimeContextPrompt';
-import { isDeleteCommand, getCommandDangerLevel } from '../commandSafety';
-import { setCoworkProxySessionId } from '../coworkOpenAICompatProxy';
-import { OPENCLAW_AGENT_TIMEOUT_SECONDS } from '../openclawConfigSync';
-import { t } from '../../i18n';
 
 const OPENCLAW_GATEWAY_TOOL_EVENTS_CAP = 'tool-events';
 const BRIDGE_MAX_MESSAGES = 20;
@@ -2386,9 +2386,6 @@ export class OpenClawRuntimeAdapter extends EventEmitter implements CoworkRuntim
       `message=${summarizeGatewayMessageShape(chatPayload.message)}`
     );
 
-    const chatRunId = typeof chatPayload.runId === 'string' ? chatPayload.runId.trim() : '';
-    const chatSessionKey = typeof chatPayload.sessionKey === 'string' ? chatPayload.sessionKey.trim() : '';
-
     const sessionId = this.resolveSessionIdFromChatPayload(chatPayload);
     if (!sessionId) {
       console.log('[Debug:handleChatEvent] no sessionId resolved, dropping event');
@@ -3584,8 +3581,6 @@ export class OpenClawRuntimeAdapter extends EventEmitter implements CoworkRuntim
     // to place the user message before the assistant — preserving correct chronological
     // order. This handles the race condition where gateway chat.history lags behind
     // the real-time streaming events.
-    let syncedCount = 0;
-
     // Collect all user message indices that need syncing:
     // 1. Normal: user messages from firstNewIdx onwards (definitely new, no dedup)
     // 2. Repair: user messages before firstNewIdx that are missing locally
@@ -3669,7 +3664,6 @@ export class OpenClawRuntimeAdapter extends EventEmitter implements CoworkRuntim
         });
       }
       this.emit('message', sessionId, userMessage);
-      syncedCount++;
     }
 
     this.channelSyncCursor.set(sessionId, historyEntries.length);

@@ -297,7 +297,7 @@ function shouldAutoDeleteMemoryText(text: string): boolean {
 export type CoworkSessionStatus = 'idle' | 'running' | 'completed' | 'error';
 export type CoworkMessageType = 'user' | 'assistant' | 'tool_use' | 'tool_result' | 'system';
 export type CoworkExecutionMode = 'auto' | 'local' | 'sandbox';
-export type CoworkAgentEngine = 'openclaw' | 'yd_cowork';
+export type CoworkAgentEngine = 'openclaw';
 
 export type AgentSource = 'custom' | 'preset';
 
@@ -344,10 +344,7 @@ export interface UpdateAgentRequest {
 
 const COWORK_AGENT_ENGINE = 'openclaw';
 
-function normalizeCoworkAgentEngineValue(value?: string | null): CoworkAgentEngine {
-  if (value === COWORK_AGENT_ENGINE || value === 'openclaw') {
-    return value;
-  }
+function normalizeCoworkAgentEngineValue(_value?: string | null): CoworkAgentEngine {
   return COWORK_AGENT_ENGINE;
 }
 

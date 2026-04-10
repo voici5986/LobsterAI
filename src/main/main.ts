@@ -1,4 +1,3 @@
-import type { PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 import type { WebContents } from 'electron';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, powerMonitor, powerSaveBlocker, protocol, session, shell } from 'electron';
 import fs from 'fs';
@@ -28,10 +27,10 @@ import {
   registerScheduledTaskHandlers,
 } from './ipcHandlers/scheduledTask';
 import {
-  ClaudeRuntimeAdapter,
   type CoworkAgentEngine,
   CoworkEngineRouter,
   OpenClawRuntimeAdapter,
+  type PermissionResult,
 } from './libs/agentEngine';
 import { cancelActiveDownload, downloadUpdate, installUpdate } from './libs/appUpdateInstaller';
 import { clearServerModelMetadata, getCurrentApiConfig, resolveAllEnabledProviderConfigs, resolveCurrentApiConfig, resolveRawApiConfig, setAuthTokensGetter, setServerBaseUrlGetter, setStoreGetter, updateServerModelMetadata } from './libs/claudeSettings';
@@ -44,7 +43,6 @@ import {
 import { saveCoworkApiConfig } from './libs/coworkConfigStore';
 import { getCoworkLogPath } from './libs/coworkLogger';
 import { registerProxyTokenRefresher, startCoworkOpenAICompatProxy, stopCoworkOpenAICompatProxy } from './libs/coworkOpenAICompatProxy';
-import { CoworkRunner } from './libs/coworkRunner';
 import { generateSessionTitle, probeCoworkModelReadiness } from './libs/coworkUtil';
 import { getServerApiBaseUrl, refreshEndpointsTestMode } from './libs/endpoints';
 import { mergeEnterpriseOpenclawConfig, resolveEnterpriseConfigPath, syncEnterpriseConfig } from './libs/enterpriseConfigSync';
@@ -645,8 +643,6 @@ process.on('exit', (code) => {
 
 let store: SqliteStore | null = null;
 let coworkStore: CoworkStore | null = null;
-let coworkRunner: CoworkRunner | null = null;
-let claudeRuntimeAdapter: ClaudeRuntimeAdapter | null = null;
 let openClawRuntimeAdapter: OpenClawRuntimeAdapter | null = null;
 let coworkEngineRouter: CoworkEngineRouter | null = null;
 let skillManager: SkillManager | null = null;
@@ -858,8 +854,7 @@ const getAgentManager = () => {
 };
 
 const resolveCoworkAgentEngine = (): CoworkAgentEngine => {
-  const configured = getCoworkStore().getConfig().agentEngine;
-  return configured === 'openclaw' ? 'openclaw' : 'yd_cowork';
+  return getCoworkStore().getConfig().agentEngine;
 };
 
 const getOpenClawConfigSync = (): OpenClawConfigSync => {
@@ -1113,18 +1108,6 @@ const syncOpenClawConfig = async (
   };
 };
 
-const getCoworkRunner = () => {
-  if (!coworkRunner) {
-    coworkRunner = new CoworkRunner(getCoworkStore());
-
-    // Provide MCP server configuration to the runner
-    coworkRunner.setMcpServerProvider(() => {
-      return getMcpStore().getEnabledServers();
-    });
-  }
-  return coworkRunner;
-};
-
 const bindCoworkRuntimeForwarder = (): void => {
   if (coworkRuntimeForwarderBound) return;
   const runtime = getCoworkEngineRouter();
@@ -1211,9 +1194,6 @@ const bindCoworkRuntimeForwarder = (): void => {
 
 const getCoworkEngineRouter = () => {
   if (!coworkEngineRouter) {
-    if (!claudeRuntimeAdapter) {
-      claudeRuntimeAdapter = new ClaudeRuntimeAdapter(getCoworkRunner());
-    }
     if (!openClawRuntimeAdapter) {
       openClawRuntimeAdapter = new OpenClawRuntimeAdapter(getCoworkStore(), getOpenClawEngineManager());
       // Wire up channel session sync for IM conversations via OpenClaw
@@ -1236,7 +1216,6 @@ const getCoworkEngineRouter = () => {
     coworkEngineRouter = new CoworkEngineRouter({
       getCurrentEngine: resolveCoworkAgentEngine,
       openclawRuntime: openClawRuntimeAdapter,
-      claudeRuntime: claudeRuntimeAdapter,
     });
   }
   return coworkEngineRouter;
@@ -3295,11 +3274,9 @@ if (!gotTheLock) {
         config.executionMode && String(config.executionMode) === 'container'
           ? 'local'
           : config.executionMode;
-      const normalizedAgentEngine = config.agentEngine === 'yd_cowork'
-        ? 'yd_cowork'
-        : config.agentEngine === 'openclaw'
-          ? 'openclaw'
-          : undefined;
+      const normalizedAgentEngine = config.agentEngine === 'openclaw'
+        ? 'openclaw'
+        : undefined;
       const normalizedMemoryEnabled = typeof config.memoryEnabled === 'boolean'
         ? config.memoryEnabled
         : undefined;

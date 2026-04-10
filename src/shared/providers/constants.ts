@@ -53,6 +53,7 @@ export const OpenClawProviderId = {
   Anthropic: 'anthropic',
   OpenAI: 'openai',
   DeepSeek: 'deepseek',
+  Qianfan: 'qianfan',
   Qwen: 'qwen-portal', // OpenClaw normalizes 'qwen' → 'qwen-portal'; use canonical ID to avoid config diff loop
   Zai: 'zai', // OpenClaw official provider ID for Zhipu/GLM
   Volcengine: 'volcengine',
@@ -308,6 +309,7 @@ const PROVIDER_DEFINITIONS = [
   },
   {
     id: ProviderName.Qianfan,
+    openClawProviderId: OpenClawProviderId.Qianfan,
     defaultBaseUrl: 'https://qianfan.baidubce.com/v2',
     defaultApiFormat: ApiFormat.OpenAI,
     codingPlanSupported: false,

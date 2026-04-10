@@ -19,12 +19,7 @@ export function resolveAgentModelSelection({
   agentModel,
   availableModels,
   fallbackModel,
-  engine,
 }: ResolveAgentModelSelectionInput): ResolveAgentModelSelectionResult {
-  if (engine !== 'openclaw') {
-    return { selectedModel: fallbackModel, usesFallback: false, hasInvalidExplicitModel: false };
-  }
-
   const normalizedAgentModel = agentModel.trim();
   if (normalizedAgentModel) {
     const explicitModel = resolveOpenClawModelRef(normalizedAgentModel, availableModels) ?? null;

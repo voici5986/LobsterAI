@@ -671,6 +671,12 @@ export type OpenClawConfigSyncResult = {
   bindingsChanged?: boolean;
 };
 
+const buildStreamingModeConfig = (
+  mode: 'off' | 'partial' | 'block' | 'progress',
+): { mode: 'off' | 'partial' | 'block' | 'progress' } => ({
+  mode,
+});
+
 type OpenClawConfigSyncDeps = {
   engineManager: OpenClawEngineManager;
   getCoworkConfig: () => CoworkConfig;
@@ -1098,7 +1104,7 @@ export class OpenClawConfigSync {
         historyLimit: tgConfig.historyLimit || 50,
         replyToMode: tgConfig.replyToMode || 'off',
         linkPreview: tgConfig.linkPreview ?? true,
-        streaming: tgConfig.streaming || 'off',
+        streaming: buildStreamingModeConfig(tgConfig.streaming || 'off'),
         mediaMaxMb: tgConfig.mediaMaxMb || 5,
       };
       if (tgConfig.proxy) {
@@ -1152,7 +1158,7 @@ export class OpenClawConfigSync {
           return Object.keys(guilds).length > 0 ? guilds : { '*': { requireMention: true } };
         })(),
         historyLimit: dcConfig.historyLimit || 50,
-        streaming: dcConfig.streaming || 'off',
+        streaming: buildStreamingModeConfig(dcConfig.streaming || 'off'),
         mediaMaxMb: dcConfig.mediaMaxMb || 25,
       };
       if (dcConfig.proxy) {
