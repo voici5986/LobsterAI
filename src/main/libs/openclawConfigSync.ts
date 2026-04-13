@@ -965,7 +965,7 @@ export class OpenClawConfigSync {
           },
           ...(workspaceDir ? { workspace: path.resolve(workspaceDir) } : {}),
         },
-        ...this.buildAgentsList(primaryModel),
+        ...this.buildAgentsList(primaryModel, this.engineManager.getStateDir()),
       },
       ...this.currentBindingsObj,
       session: this.buildSessionConfig(),
@@ -1933,7 +1933,7 @@ export class OpenClawConfigSync {
    * Per-agent `identity` (name, emoji) is set from the agent database so
    * OpenClaw picks it up natively.
    */
-  private buildAgentsList(defaultPrimaryModel: string): { list?: Array<Record<string, unknown>> } {
+  private buildAgentsList(defaultPrimaryModel: string, stateDir?: string): { list?: Array<Record<string, unknown>> } {
     const agents = this.getAgents?.() ?? [];
     const mainAgent = agents.find((agent) => agent.id === 'main');
 
@@ -1950,6 +1950,7 @@ export class OpenClawConfigSync {
       ...buildManagedAgentEntries({
         agents,
         fallbackPrimaryModel: defaultPrimaryModel,
+        stateDir,
       }),
     ];
 
