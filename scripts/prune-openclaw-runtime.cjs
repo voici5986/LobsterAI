@@ -261,6 +261,34 @@ function main() {
     }
   }
 
+  // Step 1a: Prefer external openclaw-lark over bundled feishu when both are
+  // present. Keep the current runtime-code path intact and trim the duplicate
+  // bundled feishu extension only for packaging/runtime output.
+  const thirdPartyDir = path.join(runtimeRoot, 'third-party-extensions');
+  const externalLarkDir = path.join(thirdPartyDir, 'openclaw-lark');
+  const bundledFeishuDir = path.join(distExtDir, 'feishu');
+  if (fs.existsSync(externalLarkDir) && fs.existsSync(bundledFeishuDir)) {
+    const size = getDirSize(bundledFeishuDir);
+    fs.rmSync(bundledFeishuDir, { recursive: true, force: true });
+    stats.bytesFreed += size;
+    stats.dirsRemoved++;
+    console.log(
+      `[prune-openclaw-runtime] Removed bundled feishu because openclaw-lark is present (${(size / 1024 / 1024).toFixed(1)} MB)`
+    );
+  }
+
+  // Step 1b: Remove stale external qqbot payloads from older builds.
+  const staleExternalQqbotDir = path.join(thirdPartyDir, 'openclaw-qqbot');
+  if (fs.existsSync(staleExternalQqbotDir)) {
+    const size = getDirSize(staleExternalQqbotDir);
+    fs.rmSync(staleExternalQqbotDir, { recursive: true, force: true });
+    stats.bytesFreed += size;
+    stats.dirsRemoved++;
+    console.log(
+      `[prune-openclaw-runtime] Removed stale external openclaw-qqbot (${(size / 1024 / 1024).toFixed(1)} MB)`
+    );
+  }
+
   // Step 2: Replace large unnecessary packages with stubs
   for (const pkgName of PACKAGES_TO_STUB) {
     stubPackage(path.join(nodeModulesDir, pkgName), pkgName, stats);
@@ -310,7 +338,6 @@ function main() {
   // npm v7+ auto-installs it into the plugin's own node_modules (~226 MB).
   // At runtime the host gateway already provides the SDK on the module path,
   // so this copy is redundant and safe to remove.
-  const thirdPartyDir = path.join(runtimeRoot, 'third-party-extensions');
   if (fs.existsSync(thirdPartyDir)) {
     try {
       for (const plugin of fs.readdirSync(thirdPartyDir, { withFileTypes: true })) {

@@ -365,39 +365,6 @@ for (const plugin of plugins) {
 
 log(`All ${plugins.length} plugin(s) installed successfully.`);
 
-// --- Post-install patch: openclaw-qqbot link-sdk-core preload-symlink skip ---
-// ensurePluginSdkSymlink() runs on every preload.cjs load and probes the global
-// openclaw installation via execSync("npm root -g") + execSync("openclaw --version").
-// When running embedded in third-party-extensions/, no global installation exists
-// and the symlink is not needed — the SDK is bundled in gateway.asar.
-// Adding an early return for the embedded case saves ~7-9s on cold start.
-const qqbotLinkSdkPath = path.join(runtimeExtensionsDir, 'openclaw-qqbot', 'scripts', 'link-sdk-core.cjs');
-if (fs.existsSync(qqbotLinkSdkPath)) {
-  let src = fs.readFileSync(qqbotLinkSdkPath, 'utf8');
-  if (!src.includes('LobsterAI patch')) {
-    // Insert the embedded skip right after `tag = tag || "[link-sdk]";`, before `try {`.
-    const oldStr = '  tag = tag || "[link-sdk]";\n  try {';
-    const newStr =
-      '  tag = tag || "[link-sdk]";\n' +
-      '  // LobsterAI patch: running embedded in third-party-extensions/; openclaw SDK\n' +
-      '  // is bundled in gateway.asar, no global symlink needed.  Saves ~7-9s cold start.\n' +
-      '  if (pluginRoot.includes("third-party-extensions")) {\n' +
-      '    process.stderr.write("[cfg-diag2] ensurePluginSdkSymlink: embedded skip (third-party-extensions)\\n");\n' +
-      '    return true;\n' +
-      '  }\n' +
-      '  try {';
-    const patched = src.replace(oldStr, newStr);
-    if (patched !== src) {
-      fs.writeFileSync(qqbotLinkSdkPath, patched);
-      log('Patched openclaw-qqbot/scripts/link-sdk-core.cjs: added embedded preload-symlink skip');
-    } else {
-      log('WARNING: openclaw-qqbot link-sdk-core.cjs patch anchor not found, skipping');
-    }
-  } else {
-    log('openclaw-qqbot/scripts/link-sdk-core.cjs already patched, skipping');
-  }
-}
-
 // --- Post-install patch: openclaw-weixin gatewayMethods ---
 // The openclaw-weixin plugin defines loginWithQrStart/loginWithQrWait in its
 // gateway adapter but does not declare gatewayMethods on the channel plugin
@@ -420,4 +387,3 @@ if (fs.existsSync(weixinChannelPath)) {
     log('openclaw-weixin/src/channel.ts already has gatewayMethods, skipping patch');
   }
 }
-

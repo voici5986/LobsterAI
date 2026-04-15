@@ -1041,16 +1041,23 @@ export class OpenClawConfigSync {
         // Remove known-stale plugin entries that no longer ship with the
         // runtime.  These ghost entries cause harmless but noisy "plugin
         // not found" warnings on every gateway startup.
-        const knownStalePluginIds = ['openclaw-nim-channel', 'qwen-portal-auth'];
+        const knownStalePluginIds = ['openclaw-nim-channel', 'qwen-portal-auth', 'openclaw-qqbot'];
+        const transientPluginIds = [
+          ...(preinstalledPluginIds.includes('openclaw-lark') ? ['feishu'] : []),
+        ];
         const cleanedExistingEntries = Object.fromEntries(
-          Object.entries(existingPluginEntries).filter(([id]) => !knownStalePluginIds.includes(id)),
+          Object.entries(existingPluginEntries).filter(([id]) => (
+            !knownStalePluginIds.includes(id) && !transientPluginIds.includes(id)
+          )),
         );
+        const qqbotPluginEnabled = qqInstances.some(i => i.enabled && i.appId);
 
         const pluginEntries: Record<string, unknown> = {
           // Preserve ALL existing plugin entries so runtime auto-injected
           // plugins (moonshot, minimax, volcengine, browser, etc.) survive
           // config rewrites.  Our managed entries below override stale values.
           ...cleanedExistingEntries,
+          qqbot: { enabled: qqbotPluginEnabled },
           ...Object.fromEntries(
             preinstalledPluginIds.map((id) => {
               // Sync plugin enabled state with the corresponding channel config.
@@ -1059,7 +1066,6 @@ export class OpenClawConfigSync {
               const pluginEnabled = (() => {
                 if (id === 'dingtalk') return dingTalkInstances.some(i => i.enabled && i.clientId);
                 if (id === 'openclaw-lark') return feishuInstances.some(i => i.enabled && i.appId);
-                if (id === 'openclaw-qqbot') return qqInstances.some(i => i.enabled && i.appId);
                 if (id === 'wecom-openclaw-plugin') return !!(wecomConfig?.enabled && wecomConfig.botId);
                 if (id === 'moltbot-popo') return !!(popoConfig?.enabled && popoConfig.appKey);
                 if (id === 'nim') return !!(nimConfig?.enabled && nimConfig.appKey && nimConfig.account && nimConfig.token);
@@ -1070,12 +1076,6 @@ export class OpenClawConfigSync {
               return [id, { enabled: pluginEnabled }];
             }),
           ),
-          ...(preinstalledPluginIds.includes('openclaw-lark')
-            ? { feishu: { enabled: false } }
-            : {}),
-          ...(preinstalledPluginIds.includes('openclaw-qqbot')
-            ? { qqbot: { enabled: false } }
-            : {}),
           ...(hasMcpBridgePlugin
             ? { 'mcp-bridge': { enabled: true } }
             : {}),

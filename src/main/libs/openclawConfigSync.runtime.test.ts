@@ -200,6 +200,89 @@ describe('OpenClawConfigSync runtime config output', () => {
     expect(config.channels.dingtalk).not.toHaveProperty('_agentBinding');
   });
 
+  test('prefers external lark for feishu without stale feishu entry and keeps bundled qqbot entry', async () => {
+    const { OpenClawConfigSync } = await import('./openclawConfigSync');
+
+    fs.writeFileSync(configPath, JSON.stringify({
+      plugins: {
+        entries: {
+          feishu: { enabled: false },
+          'openclaw-qqbot': { enabled: false },
+          qqbot: { enabled: false },
+        },
+      },
+    }, null, 2));
+
+    const sync = new OpenClawConfigSync({
+      engineManager: {
+        getConfigPath: () => configPath,
+        getGatewayToken: () => 'gateway-token',
+        getStateDir: () => stateDir,
+      } as never,
+      getCoworkConfig: () => ({
+        workingDirectory: tmpDir,
+        systemPrompt: '',
+        executionMode: 'local',
+        agentEngine: 'openclaw',
+        memoryEnabled: false,
+        memoryImplicitUpdateEnabled: false,
+        memoryLlmJudgeEnabled: false,
+        memoryGuardLevel: 'balanced',
+        memoryUserMemoriesMaxItems: 100,
+        skipMissedJobs: false,
+      }),
+      isEnterprise: () => false,
+      getTelegramOpenClawConfig: () => null,
+      getDiscordOpenClawConfig: () => null,
+      getDingTalkInstances: () => [],
+      getFeishuInstances: () => [{
+        enabled: true,
+        appId: 'cli_feishu_app',
+        appSecret: 'secret',
+        instanceId: 'feishu-instance-1',
+        instanceName: 'Feishu Bot 1',
+        domain: 'feishu',
+        dmPolicy: 'open',
+        allowFrom: ['*'],
+        groupPolicy: 'allowlist',
+        groupAllowFrom: [],
+        groups: { '*': { requireMention: true } },
+        historyLimit: 50,
+        streaming: true,
+        replyMode: 'auto',
+        blockStreaming: false,
+        mediaMaxMb: 30,
+      }],
+      getQQInstances: () => [{
+        enabled: true,
+        appId: 'qq-app-id',
+        clientSecret: 'qq-secret',
+        instanceId: 'qq-instance-1',
+        instanceName: 'QQ Bot 1',
+        allowFrom: ['*'],
+        dmPolicy: 'open',
+        markdownSupport: true,
+      }],
+      getWecomConfig: () => null,
+      getPopoConfig: () => null,
+      getNimConfig: () => null,
+      getNeteaseBeeChanConfig: () => null,
+      getWeixinConfig: () => null,
+      getIMSettings: () => null,
+      getSkillsList: () => [],
+      getAgents: () => [],
+    } as never);
+
+    const result = sync.sync('feishu-lark-qqbot');
+    expect(result.ok).toBe(true);
+
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    expect(config.plugins.entries['openclaw-lark']).toEqual({ enabled: true });
+    expect(config.plugins.entries).not.toHaveProperty('feishu');
+    expect(config.plugins.entries.qqbot).toEqual({ enabled: true });
+    expect(config.plugins.entries).not.toHaveProperty('openclaw-qqbot');
+  });
+
   test('writes weixin channel config using dmPolicy and allowFrom instead of unsupported accountId', async () => {
     const { OpenClawConfigSync } = await import('./openclawConfigSync');
 

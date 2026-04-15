@@ -22,11 +22,6 @@
         "version": "2026.4.7"
       },
       {
-        "id": "openclaw-qqbot",
-        "npm": "@tencent-connect/openclaw-qqbot",
-        "version": "1.7.1"
-      },
-      {
         "id": "wecom-openclaw-plugin",
         "npm": "@wecom/wecom-openclaw-plugin",
         "version": "2026.4.3"
@@ -81,7 +76,7 @@
     "postinstall": "patch-package && electron-builder install-app-deps",
     "pack": "npm run setup:python-runtime && npm run build && npm run compile:electron && npm run build:skills && electron-builder --dir",
     "dist": "npm run setup:python-runtime && npm run build && npm run compile:electron && npm run build:skills && electron-builder",
-    "dist:mac": "node -r dotenv/config node_modules/.bin/electron-builder --mac --config electron-builder.json",
+    "dist:mac": "electron-builder --mac --config electron-builder.json",
     "predist:mac": "npm run build && npm run compile:electron && npm run build:skills && npm run openclaw:runtime:mac-arm64",
     "dist:mac:x64": "npm run build && npm run compile:electron && npm run build:skills && npm run openclaw:runtime:mac-x64 && electron-builder --mac --x64",
     "dist:mac:arm64": "npm run build && npm run compile:electron && npm run build:skills && npm run openclaw:runtime:mac-arm64 && electron-builder --mac --arm64",
@@ -116,7 +111,6 @@
     "@electron/remote": "^2.0.12",
     "@headlessui/react": "^1.7.18",
     "@heroicons/react": "^2.1.1",
-    "@larksuite/openclaw-lark": "^2026.3.17",
     "@larksuite/openclaw-lark-tools": "~1.0.26",
     "@larksuiteoapi/node-sdk": "^1.58.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
