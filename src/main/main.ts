@@ -5149,6 +5149,16 @@ if (!gotTheLock) {
       );
     }
 
+    // Start proxy BEFORE config sync so proxy-dependent providers (e.g. copilot)
+    // get the correct baseURL on the first write, avoiding a mid-startup config
+    // overwrite that triggers unnecessary gateway hot-reload.
+    const appConfig = getStore().get<AppConfigSettings>('app_config');
+    await applyProxyPreference(getUseSystemProxyFromConfig(appConfig));
+
+    await startCoworkOpenAICompatProxy().catch((error) => {
+      console.error('Failed to start OpenAI compatibility proxy:', error);
+    });
+
     const startupSync = await syncOpenClawConfig({
       reason: 'startup',
       restartGatewayIfRunning: false,
@@ -5223,24 +5233,6 @@ if (!gotTheLock) {
       console.log('[Main] initApp: skill services started');
     } catch (error) {
       console.error('[Main] initApp: skill services failed:', error);
-    }
-
-    const appConfig = getStore().get<AppConfigSettings>('app_config');
-    await applyProxyPreference(getUseSystemProxyFromConfig(appConfig));
-
-    await startCoworkOpenAICompatProxy().catch((error) => {
-      console.error('Failed to start OpenAI compatibility proxy:', error);
-    });
-
-    // Re-sync OpenClaw config after proxy is ready so that providers that route
-    // through the proxy (e.g. github-copilot) get the correct baseUrl.
-    if (resolveCoworkAgentEngine() === 'openclaw') {
-      const proxyResync = await syncOpenClawConfig({
-        reason: 'proxy-ready',
-      });
-      if (proxyResync.changed) {
-        console.log('[Main] OpenClaw config updated after proxy ready, gateway will restart to pick up new config');
-      }
     }
 
     // 设置安全策略
