@@ -123,6 +123,8 @@ const IMSettings: React.FC = () => {
   const [configLoaded, setConfigLoaded] = useState(false);
   // Re-entrancy guard for gateway toggle to prevent rapid ON→OFF→ON
   const [togglingPlatform, setTogglingPlatform] = useState<Platform | null>(null);
+  // Loading state for email instance toggle (stores instanceId being toggled on)
+  const [emailToggleLoading, setEmailToggleLoading] = useState<string | null>(null);
   // Track visibility of password fields (eye toggle)
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   // WeCom quick setup state
@@ -1694,23 +1696,56 @@ const IMSettings: React.FC = () => {
                 {/* Enable toggle */}
                 <button
                   type="button"
+                  disabled={emailToggleLoading === inst.instanceId}
                   onClick={async () => {
                     const newEnabled = !inst.enabled;
-                    const success = await imService.updateEmailInstanceConfig(inst.instanceId, { enabled: newEnabled });
-                    if (success) {
-                      dispatch(setEmailInstanceConfig({ instanceId: inst.instanceId, config: { enabled: newEnabled } }));
-                      if (newEnabled) dispatch(clearError());
+
+                    // Turning OFF — no connectivity check needed
+                    if (!newEnabled) {
+                      const success = await imService.updateEmailInstanceConfig(inst.instanceId, { enabled: false });
+                      if (success) {
+                        dispatch(setEmailInstanceConfig({ instanceId: inst.instanceId, config: { enabled: false } }));
+                      }
+                      return;
+                    }
+
+                    // Turning ON — run connectivity test first
+                    if (emailToggleLoading) return;
+                    setEmailToggleLoading(inst.instanceId);
+                    try {
+                      const result = await imService.testGateway('email', {
+                        email: { instances: [inst] },
+                      } as Partial<IMGatewayConfig>);
+                      if (result && result.verdict !== 'fail') {
+                        const success = await imService.updateEmailInstanceConfig(inst.instanceId, { enabled: true });
+                        if (success) {
+                          dispatch(setEmailInstanceConfig({ instanceId: inst.instanceId, config: { enabled: true } }));
+                          dispatch(clearError());
+                        }
+                      } else {
+                        alert(i18nService.t('emailConnectivityFailAlert'));
+                      }
+                    } finally {
+                      setEmailToggleLoading(null);
                     }
                   }}
-                  className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out cursor-pointer ${
+                  className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                    emailToggleLoading === inst.instanceId
+                      ? 'cursor-wait bg-gray-400 dark:bg-gray-600'
+                      : 'cursor-pointer'
+                  } ${
                     inst.enabled
                       ? (instStatus?.connected ? 'bg-green-500' : 'bg-yellow-500')
                       : 'bg-gray-400 dark:bg-gray-600'
                   }`}
                   title={inst.enabled ? i18nService.t('imQQDisableInstance') : i18nService.t('imQQEnableInstance')}
                 >
-                  <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    inst.enabled ? 'translate-x-4' : 'translate-x-0'
+                  <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
+                    emailToggleLoading === inst.instanceId
+                      ? 'translate-x-0 bg-gray-300 dark:bg-gray-500 animate-pulse'
+                      : inst.enabled
+                        ? 'translate-x-4 bg-white'
+                        : 'translate-x-0 bg-white'
                   }`} />
                 </button>
 
