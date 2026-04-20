@@ -53,7 +53,7 @@ const App: React.FC = () => {
   const [downloadProgress, setDownloadProgress] = useState<AppUpdateDownloadProgress | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [privacyAgreed, setPrivacyAgreed] = useState<boolean | null>(null);
-  const [showWelcome, setShowWelcome] = useState(true);
+  const [showWelcome, setShowWelcome] = useState(false);
   const [enterpriseConfig, setEnterpriseConfig] = useState<{
     ui?: Record<string, 'hide' | 'disable' | 'readonly'>;
     disableUpdate?: boolean;
@@ -430,6 +430,7 @@ const App: React.FC = () => {
   const handlePrivacyAccept = useCallback(async () => {
     await window.electron.store.set('privacy_agreed', true);
     setPrivacyAgreed(true);
+    setShowWelcome(true);
   }, []);
 
   const handlePrivacyReject = useCallback(() => {
@@ -438,8 +439,14 @@ const App: React.FC = () => {
   }, []);
 
   const handleWelcomeClose = useCallback(() => setShowWelcome(false), []);
-  const handleWelcomeLogin = useCallback(() => setShowWelcome(false), []);
-  const handleWelcomeCustomModel = useCallback(() => setShowWelcome(false), []);
+  const handleWelcomeLogin = useCallback(async () => {
+    setShowWelcome(false);
+    await authService.login();
+  }, []);
+  const handleWelcomeCustomModel = useCallback(() => {
+    setShowWelcome(false);
+    handleShowSettings({ initialTab: 'model' });
+  }, [handleShowSettings]);
 
   const handlePermissionResponse = useCallback(async (result: CoworkPermissionResult) => {
     if (!pendingPermission) return;
@@ -736,7 +743,7 @@ const App: React.FC = () => {
               />
             ) : (
               <CoworkView
-                onRequestAppSettings={handleShowSettings}
+                onRequestAppSettings={privacyAgreed === true && !showWelcome ? handleShowSettings : undefined}
                 onShowSkills={handleShowSkills}
                 isSidebarCollapsed={isSidebarCollapsed}
                 onToggleSidebar={handleToggleSidebar}
