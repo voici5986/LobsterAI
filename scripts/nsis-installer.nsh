@@ -35,6 +35,31 @@
     }"'
   Pop $0
 
+  ; ── Backup user-created skills to AppData before extraction overwrites them ──
+  ; Copy non-bundled skills to %APPDATA%\LobsterAI\skills-backup\ so they are
+  ; preserved regardless of whether the rename below succeeds or the old
+  ; uninstaller deletes $INSTDIR. The backup is restored in customInstall.
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -Command "\
+    $$src    = [IO.Path]::Combine($\"$INSTDIR$\",  $\"resources$\", $\"SKILLs$\");\
+    $$backup = [IO.Path]::Combine($\"$APPDATA$\", $\"LobsterAI$\", $\"skills-backup$\");\
+    $$config = [IO.Path]::Combine($$src, $\"skills.config.json$\");\
+    if (Test-Path $$src) {\
+      $$bundled = @(try {\
+        if (Test-Path $$config) {\
+          (Get-Content $$config -Raw | ConvertFrom-Json).defaults.PSObject.Properties.Name\
+        }\
+      } catch { });\
+      Remove-Item -Path $$backup -Recurse -Force -ErrorAction SilentlyContinue;\
+      New-Item -ItemType Directory -Path $$backup -Force | Out-Null;\
+      Get-ChildItem -Path $$src -Directory | ForEach-Object {\
+        if ($$bundled -notcontains $$_.Name) {\
+          Copy-Item -Path $$_.FullName -Destination (Join-Path $$backup $$_.Name)\
+            -Recurse -Force -ErrorAction SilentlyContinue\
+        }\
+      }\
+    }"'
+  Pop $0
+
   ; ── Remove old installation directory ──
   ; After all processes are gone, ghost file handles may still linger for a
   ; few seconds. We must remove the old install directory — including the old
@@ -42,14 +67,9 @@
   ; lacks our customUnInit and would show an undismissable dialog).
   ;
   ; Strategy: rename $INSTDIR to a temp name (instant, even for thousands of
-  ; files). The actual deletion is deferred to customInstall so that
-  ; user-created skills in $INSTDIR.old\resources\SKILLs can be copied back
-  ; into the new install before the old directory is removed.
-  ; If rename fails (ghost file handles), skip — the installer's built-in
-  ; uninstall step will handle the old directory.
-  ; Remove any stale .old directory left by a previous interrupted install.
-  ; NSIS Rename silently fails when the destination already exists, which
-  ; would cause the skill-restore logic in customInstall to be skipped.
+  ; files). The actual deletion is deferred to customInstall.
+  ; User skills are already safe in the AppData backup above, so this rename
+  ; is best-effort: if it fails, skills are still restored from the backup.
   IfFileExists "$INSTDIR.old\*.*" 0 SkipStaleOldDirCleanup
     nsExec::ExecToLog 'cmd /c rd /s /q "$INSTDIR.old"'
     Pop $0
@@ -101,47 +121,31 @@
   FileWrite $2 "tar-extract-done: $5-$4-$3 $6:$7:$8 exit=$0$\r$\n"
   Delete "$INSTDIR\resources\win-resources.tar"
 
-  ; ── Restore user-created skills from old install dir ──
-  ; Read skills.config.json from the old install to identify bundled skill IDs.
-  ; Skills in $INSTDIR.old that are NOT listed in skills.config.json defaults
-  ; are user-created and copied back into the new install.
-  ; Falls back to "copy anything not already in the new dir" if the config is absent.
-  ; This runs synchronously so the app never launches before skills are ready.
-  IfFileExists "$INSTDIR.old\*.*" 0 OldDirMissing
-    FileWrite $2 "old-dir-status: present$\r$\n"
-    Goto SkillRestoreBegin
-  OldDirMissing:
-    FileWrite $2 "old-dir-status: missing (rename failed or clean install)$\r$\n"
-    Goto SkipSkillRestore
-  SkillRestoreBegin:
+  ; ── Restore user-created skills from AppData backup ──
+  ; The backup was created in customInit before extraction began. Restore any
+  ; skills not already present in the new install, then clean up the backup.
+  IfFileExists "$APPDATA\LobsterAI\skills-backup\*.*" 0 SkipSkillRestore
     ${GetTime} "" "L" $3 $4 $5 $6 $7 $8 $9
     FileWrite $2 "skill-restore-start: $5-$4-$3 $6:$7:$8$\r$\n"
 
     nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -Command "\
-      $$oldSkills = [IO.Path]::Combine($\"$INSTDIR.old$\", $\"resources$\", $\"SKILLs$\");\
-      $$newSkills = [IO.Path]::Combine($\"$INSTDIR$\",     $\"resources$\", $\"SKILLs$\");\
-      $$config    = [IO.Path]::Combine($$oldSkills, $\"skills.config.json$\");\
-      $$bundled   = @(try {\
-        if (Test-Path $$config) {\
-          (Get-Content $$config -Raw | ConvertFrom-Json).defaults.PSObject.Properties.Name\
+      $$backup    = [IO.Path]::Combine($\"$APPDATA$\", $\"LobsterAI$\", $\"skills-backup$\");\
+      $$newSkills = [IO.Path]::Combine($\"$INSTDIR$\",  $\"resources$\", $\"SKILLs$\");\
+      Get-ChildItem -Path $$backup -Directory | ForEach-Object {\
+        $$target = [IO.Path]::Combine($$newSkills, $$_.Name);\
+        if (-not (Test-Path $$target)) {\
+          Copy-Item -Path $$_.FullName -Destination $$target -Recurse -Force\
+            -ErrorAction SilentlyContinue\
         }\
-      } catch { });\
-      Get-ChildItem -Path $$oldSkills -Directory | ForEach-Object {\
-        if ($$bundled -notcontains $$_.Name) {\
-          $$target = [IO.Path]::Combine($$newSkills, $$_.Name);\
-          if (-not (Test-Path $$target)) {\
-            Copy-Item -Path $$_.FullName -Destination $$target -Recurse -Force\
-              -ErrorAction SilentlyContinue\
-          }\
-        }\
-      }"'
+      };\
+      Remove-Item -Path $$backup -Recurse -Force -ErrorAction SilentlyContinue"'
     Pop $0
 
     ${GetTime} "" "L" $3 $4 $5 $6 $7 $8 $9
     FileWrite $2 "skill-restore-done: $5-$4-$3 $6:$7:$8 exit=$0$\r$\n"
   SkipSkillRestore:
 
-  ; ── Delete the old install directory now that user skills are restored ──
+  ; ── Delete the old install directory if rename had succeeded ──
   IfFileExists "$INSTDIR.old\*.*" 0 SkipOldDirCleanup
     nsExec::Exec 'cmd /c rd /s /q "$INSTDIR.old"'
   SkipOldDirCleanup:
