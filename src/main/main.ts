@@ -7,6 +7,7 @@ import path from 'path';
 import type { OpenClawSessionPatch } from '../common/openclawSession';
 import { buildScheduledTaskEnginePrompt } from '../scheduledTask/enginePrompt';
 import { migrateScheduledTaskRunsToOpenclaw, migrateScheduledTasksToOpenclaw } from '../scheduledTask/migrate';
+import { AppUpdateIpc } from '../shared/appUpdate/constants';
 import { PlatformRegistry } from '../shared/platform';
 import { AgentManager } from './agentManager';
 import { APP_NAME } from './appConstants';
@@ -35,7 +36,7 @@ import {
   OpenClawRuntimeAdapter,
   type PermissionResult,
 } from './libs/agentEngine';
-import { cancelActiveDownload, downloadUpdate, installUpdate } from './libs/appUpdateInstaller';
+import { AppUpdateCoordinator } from './libs/appUpdateCoordinator';
 import { clearServerModelMetadata, getCurrentApiConfig, resolveAllEnabledProviderConfigs, resolveCurrentApiConfig, resolveRawApiConfig, setAuthTokensGetter, setServerBaseUrlGetter, setStoreGetter, updateServerModelMetadata } from './libs/claudeSettings';
 import {
   clearCopilotTokenState,
@@ -741,6 +742,7 @@ let openClawStatusForwarderBound = false;
 let coworkRuntimeForwarderBound = false;
 let memoryMigrationDone = false;
 let preventSleepBlockerId: number | null = null;
+let appUpdateCoordinator: AppUpdateCoordinator | null = null;
 
 function setPreventSleepBlockerEnabled(enabled: boolean): void {
   if (enabled) {
@@ -786,6 +788,13 @@ const getOpenClawEngineManager = (): OpenClawEngineManager => {
     openClawEngineManager = new OpenClawEngineManager();
   }
   return openClawEngineManager;
+};
+
+const getAppUpdateCoordinator = (): AppUpdateCoordinator => {
+  if (!appUpdateCoordinator) {
+    appUpdateCoordinator = new AppUpdateCoordinator(getStore());
+  }
+  return appUpdateCoordinator;
 };
 
 const forwardOpenClawStatus = (status: OpenClawEngineStatus): void => {
@@ -4433,37 +4442,26 @@ if (!gotTheLock) {
     }
   });
 
-  // App update download & install
-  ipcMain.handle('appUpdate:download', async (event, url: string) => {
-    // Block downloads in enterprise mode
-    const enterprise = getStore().get<{ disableUpdate?: boolean }>('enterprise_config');
-    if (enterprise?.disableUpdate) {
-      return { success: false, error: 'Updates are managed by enterprise' };
-    }
-    try {
-      const filePath = await downloadUpdate(url, (progress) => {
-        if (!event.sender.isDestroyed()) {
-          event.sender.send('appUpdate:downloadProgress', progress);
-        }
-      });
-      return { success: true, filePath };
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Download failed' };
-    }
+  ipcMain.handle(AppUpdateIpc.GetState, async () => {
+    return getAppUpdateCoordinator().getState();
   });
 
-  ipcMain.handle('appUpdate:cancelDownload', async () => {
-    const cancelled = cancelActiveDownload();
-    return { success: cancelled };
+  ipcMain.handle(AppUpdateIpc.CheckNow, async (_event, options?: { manual?: boolean }) => {
+    return getAppUpdateCoordinator().checkNow(options);
   });
 
-  ipcMain.handle('appUpdate:install', async (_event, filePath: string) => {
-    try {
-      await installUpdate(filePath);
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Installation failed' };
-    }
+  ipcMain.handle(AppUpdateIpc.RetryDownload, async () => {
+    const state = await getAppUpdateCoordinator().retryDownload();
+    return { success: true, state };
+  });
+
+  ipcMain.handle(AppUpdateIpc.CancelDownload, async () => {
+    const state = getAppUpdateCoordinator().cancelDownload();
+    return { success: true, state };
+  });
+
+  ipcMain.handle(AppUpdateIpc.InstallReady, async () => {
+    return getAppUpdateCoordinator().installReadyUpdate();
   });
 
   // Helper: detect if a URL belongs to GitHub Copilot and apply token refresh on 401.

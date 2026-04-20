@@ -3,13 +3,12 @@ import { ArrowTopRightOnSquareIcon, ChatBubbleLeftIcon, CheckCircleIcon, Cog6Too
 import React, { useCallback,useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
+import { type AppUpdateInfo,AppUpdateStatus } from '../../shared/appUpdate/constants';
 import { ProviderName, ProviderRegistry, resolveCodingPlanBaseUrl } from '../../shared/providers';
 import { type AppConfig, defaultConfig, getCustomProviderDefaultName, getProviderDisplayName, getVisibleProviders, isCustomProvider } from '../config';
 import { APP_ID, EXPORT_FORMAT_TYPE, EXPORT_PASSWORD } from '../constants/app';
 import { getProviderIcon } from '../providers/uiRegistry';
 import { apiService } from '../services/api';
-import type { AppUpdateInfo } from '../services/appUpdate';
-import { checkForAppUpdate } from '../services/appUpdate';
 import { configService } from '../services/config';
 import { coworkService } from '../services/cowork';
 import { decryptSecret, decryptWithPassword, EncryptedPayload, encryptWithPassword, PasswordEncryptedPayload } from '../services/encryption';
@@ -608,7 +607,7 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
   const [testMode, setTestMode] = useState(false);
   const [logoClickCount, setLogoClickCount] = useState(0);
   const [testModeUnlocked, setTestModeUnlocked] = useState(false);
-  const [updateCheckStatus, setUpdateCheckStatus] = useState<'idle' | 'checking' | 'upToDate' | 'error'>('idle');
+  const [updateCheckStatus, setUpdateCheckStatus] = useState<'idle' | 'checking' | 'upToDate' | 'error' | 'downloading' | 'ready'>('idle');
 
   useEffect(() => {
     window.electron.appInfo.getVersion().then(setAppVersion);
@@ -636,11 +635,12 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
     if (updateCheckStatus === 'checking' || !appVersion) return;
     setUpdateCheckStatus('checking');
     try {
-      const info = await checkForAppUpdate(appVersion, true);
-      if (info) {
-        setUpdateCheckStatus('idle');
-        onUpdateFound?.(info);
-      } else {
+      const result = await window.electron.appUpdate.checkNow({ manual: true });
+      if (!result.success) {
+        throw new Error(result.error || 'Update check failed');
+      }
+
+      if (!result.updateFound) {
         setUpdateCheckStatus('upToDate');
         if (updateCheckTimerRef.current != null) {
           window.clearTimeout(updateCheckTimerRef.current);
@@ -649,6 +649,19 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
           setUpdateCheckStatus('idle');
           updateCheckTimerRef.current = null;
         }, 3000);
+        return;
+      }
+
+      if (result.state.status === AppUpdateStatus.Ready) {
+        setUpdateCheckStatus('ready');
+      } else if (result.state.status === AppUpdateStatus.Downloading) {
+        setUpdateCheckStatus('downloading');
+      } else {
+        setUpdateCheckStatus('idle');
+      }
+
+      if (result.state.info) {
+        onUpdateFound?.(result.state.info);
       }
     } catch {
       setUpdateCheckStatus('error');
@@ -4000,6 +4013,8 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
                     className="text-xs px-2 py-0.5 rounded-md border border-border text-secondary hover:text-primary dark:hover:text-primary hover:border-primary dark:hover:border-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {updateCheckStatus === 'checking' && i18nService.t('updateChecking')}
+                    {updateCheckStatus === 'downloading' && i18nService.t('updateDownloadingBackground')}
+                    {updateCheckStatus === 'ready' && i18nService.t('updateReadyTitle')}
                     {updateCheckStatus === 'upToDate' && i18nService.t('updateUpToDate')}
                     {updateCheckStatus === 'error' && i18nService.t('updateCheckFailed')}
                     {updateCheckStatus === 'idle' && i18nService.t('checkForUpdate')}

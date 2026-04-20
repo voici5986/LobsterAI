@@ -1,41 +1,48 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useSelector, useDispatch } from 'react-redux';
+import { ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
+import React, { useCallback, useEffect, useMemo,useRef, useState } from 'react';
+import { useDispatch,useSelector } from 'react-redux';
+
+import {
+  APP_UPDATE_HEARTBEAT_INTERVAL_MS,
+  APP_UPDATE_POLL_INTERVAL_MS,
+  type AppUpdateInfo,
+  type AppUpdateRuntimeState,
+  AppUpdateStatus,
+} from '../shared/appUpdate/constants';
+import AgentsView from './components/agent/AgentsView';
+import { CoworkView } from './components/cowork';
+import CoworkPermissionModal from './components/cowork/CoworkPermissionModal';
+import CoworkQuestionWizard from './components/cowork/CoworkQuestionWizard';
+import EngineStartupOverlay from './components/cowork/EngineStartupOverlay';
+import { McpView } from './components/mcp';
+import PrivacyDialog from './components/PrivacyDialog';
+import { ScheduledTasksView } from './components/scheduledTasks';
+import Settings, { type SettingsOpenOptions } from './components/Settings';
+import Sidebar from './components/Sidebar';
+import { SkillsView } from './components/skills';
+import Toast from './components/Toast';
+import AppUpdateBadge from './components/update/AppUpdateBadge';
+import AppUpdateModal from './components/update/AppUpdateModal';
+import WindowTitleBar from './components/window/WindowTitleBar';
+import { defaultConfig, getProviderDisplayName } from './config';
+import type { ApiConfig } from './services/api';
+import { apiService } from './services/api';
+import { authService } from './services/auth';
+import { configService } from './services/config';
+import { coworkService } from './services/cowork';
+import { i18nService } from './services/i18n';
+import { scheduledTaskService } from './services/scheduledTask';
+import { matchesShortcut } from './services/shortcuts';
+import { themeService } from './services/theme';
 import { RootState, store } from './store';
 import {
   selectCurrentSessionId,
   selectFirstPendingPermission,
 } from './store/selectors/coworkSelectors';
-import Settings, { type SettingsOpenOptions } from './components/Settings';
-import Sidebar from './components/Sidebar';
-import Toast from './components/Toast';
-import WindowTitleBar from './components/window/WindowTitleBar';
-import { CoworkView } from './components/cowork';
-import { SkillsView } from './components/skills';
-import { ScheduledTasksView } from './components/scheduledTasks';
-import { McpView } from './components/mcp';
-import AgentsView from './components/agent/AgentsView';
-import CoworkPermissionModal from './components/cowork/CoworkPermissionModal';
-import CoworkQuestionWizard from './components/cowork/CoworkQuestionWizard';
-import EngineStartupOverlay from './components/cowork/EngineStartupOverlay';
-import { configService } from './services/config';
-import { apiService } from './services/api';
-import { themeService } from './services/theme';
-import { coworkService } from './services/cowork';
-import { authService } from './services/auth';
-import { scheduledTaskService } from './services/scheduledTask';
-import { checkForAppUpdate, type AppUpdateInfo, type AppUpdateDownloadProgress, UPDATE_POLL_INTERVAL_MS, UPDATE_HEARTBEAT_INTERVAL_MS } from './services/appUpdate';
-import { defaultConfig, getProviderDisplayName } from './config';
+import { setDraftPrompt } from './store/slices/coworkSlice';
 import { setAvailableModels, setSelectedModel } from './store/slices/modelSlice';
 import { clearSelection } from './store/slices/quickActionSlice';
-import { setDraftPrompt } from './store/slices/coworkSlice';
-import type { ApiConfig } from './services/api';
 import type { CoworkPermissionResult } from './types/cowork';
-import { ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
-import { i18nService } from './services/i18n';
-import { matchesShortcut } from './services/shortcuts';
-import AppUpdateBadge from './components/update/AppUpdateBadge';
-import AppUpdateModal from './components/update/AppUpdateModal';
-import PrivacyDialog from './components/PrivacyDialog';
 
 const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
@@ -46,11 +53,14 @@ const App: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [, forceLanguageRefresh] = useState(0);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
+  const [appUpdateState, setAppUpdateState] = useState<AppUpdateRuntimeState>({
+    status: AppUpdateStatus.Idle,
+    info: null,
+    progress: null,
+    readyFilePath: null,
+    errorMessage: null,
+  });
   const [showUpdateModal, setShowUpdateModal] = useState(false);
-  const [updateModalState, setUpdateModalState] = useState<'info' | 'downloading' | 'installing' | 'error'>('info');
-  const [downloadProgress, setDownloadProgress] = useState<AppUpdateDownloadProgress | null>(null);
-  const [updateError, setUpdateError] = useState<string | null>(null);
   const [privacyAgreed, setPrivacyAgreed] = useState<boolean | null>(null);
   const [enterpriseConfig, setEnterpriseConfig] = useState<{
     ui?: Record<string, 'hide' | 'disable' | 'readonly'>;
@@ -58,6 +68,7 @@ const App: React.FC = () => {
   } | null>(null);
   const toastTimerRef = useRef<number | null>(null);
   const hasInitialized = useRef(false);
+  const previousUpdateStatusRef = useRef<AppUpdateRuntimeState['status']>(AppUpdateStatus.Idle);
   const dispatch = useDispatch();
   const selectedModel = useSelector((state: RootState) => state.model.selectedModel);
   const currentSessionId = useSelector(selectCurrentSessionId);
@@ -318,45 +329,88 @@ const App: React.FC = () => {
     }, 2200);
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+
+    const loadInitialUpdateState = async () => {
+      try {
+        const state = await window.electron.appUpdate.getState();
+        if (mounted) {
+          setAppUpdateState(state);
+          previousUpdateStatusRef.current = state.status;
+        }
+      } catch (error) {
+        console.error('[App] failed to load initial app update state:', error);
+      }
+    };
+
+    void loadInitialUpdateState();
+
+    const unsubscribe = window.electron.appUpdate.onStateChanged((state) => {
+      const previousStatus = previousUpdateStatusRef.current;
+      previousUpdateStatusRef.current = state.status;
+      setAppUpdateState(state);
+
+      if (state.status === AppUpdateStatus.Ready && previousStatus !== AppUpdateStatus.Ready) {
+        setShowUpdateModal(true);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
+
   const handleShowLogin = useCallback(() => {
     showToast(i18nService.t('featureInDevelopment'));
   }, [showToast]);
 
   const runUpdateCheck = useCallback(async () => {
     try {
-      const currentVersion = await window.electron.appInfo.getVersion();
-      const nextUpdate = await checkForAppUpdate(currentVersion);
-      setUpdateInfo(nextUpdate);
-      if (!nextUpdate) {
-        setShowUpdateModal(false);
+      const result = await window.electron.appUpdate.checkNow();
+      setAppUpdateState(result.state);
+      if (!result.success) {
+        console.error('[App] app update check failed:', result.error);
       }
     } catch (error) {
       console.error('Failed to check app update:', error);
-      setUpdateInfo(null);
-      setShowUpdateModal(false);
     }
   }, []);
 
+  const updateInfo = appUpdateState.info;
+
   const handleOpenUpdateModal = useCallback(() => {
     if (!updateInfo) return;
-    setUpdateModalState('info');
-    setUpdateError(null);
-    setDownloadProgress(null);
     setShowUpdateModal(true);
   }, [updateInfo]);
 
-  const handleUpdateFound = useCallback((info: AppUpdateInfo) => {
-    setUpdateInfo(info);
-    setUpdateModalState('info');
-    setUpdateError(null);
-    setDownloadProgress(null);
+  const handleUpdateFound = useCallback((_info: AppUpdateInfo) => {
     setShowUpdateModal(true);
   }, []);
 
   const handleConfirmUpdate = useCallback(async () => {
     if (!updateInfo) return;
 
-    // If the URL is a fallback page (not a direct file download), open in browser
+    if (appUpdateState.readyFilePath) {
+      const installResult = await window.electron.appUpdate.installReady();
+      if (!installResult.success) {
+        showToast(installResult.error || i18nService.t('updateInstallFailed'));
+      }
+      return;
+    }
+
+    if (appUpdateState.status === AppUpdateStatus.Error || appUpdateState.status === AppUpdateStatus.Available) {
+      const isManualUrl = updateInfo.url.includes('#') || updateInfo.url.endsWith('/download-list');
+      if (!isManualUrl) {
+        const retryResult = await window.electron.appUpdate.retryDownload();
+        if (!retryResult.success) {
+          showToast(i18nService.t('updateDownloadFailed'));
+        }
+        return;
+      }
+    }
+
     if (updateInfo.url.includes('#') || updateInfo.url.endsWith('/download-list')) {
       setShowUpdateModal(false);
       try {
@@ -370,60 +424,21 @@ const App: React.FC = () => {
       }
       return;
     }
-
-    setUpdateModalState('downloading');
-    setDownloadProgress(null);
-    setUpdateError(null);
-
-    const unsubscribe = window.electron.appUpdate.onDownloadProgress((progress) => {
-      setDownloadProgress(progress);
-    });
-
-    try {
-      const downloadResult = await window.electron.appUpdate.download(updateInfo.url);
-      unsubscribe();
-
-      if (!downloadResult.success) {
-        // If user cancelled, handleCancelDownload already set the state — don't overwrite
-        if (downloadResult.error === 'Download cancelled') {
-          return;
-        }
-        setUpdateModalState('error');
-        setUpdateError(downloadResult.error || i18nService.t('updateDownloadFailed'));
-        return;
-      }
-
-      setUpdateModalState('installing');
-      const installResult = await window.electron.appUpdate.install(downloadResult.filePath!);
-
-      if (!installResult.success) {
-        setUpdateModalState('error');
-        setUpdateError(installResult.error || i18nService.t('updateInstallFailed'));
-      }
-      // If successful, app will quit and relaunch
-    } catch (error) {
-      unsubscribe();
-      const msg = error instanceof Error ? error.message : '';
-      // If user cancelled, handleCancelDownload already set the state — don't overwrite
-      if (msg === 'Download cancelled') {
-        return;
-      }
-      setUpdateModalState('error');
-      setUpdateError(msg || i18nService.t('updateDownloadFailed'));
-    }
-  }, [updateInfo, showToast]);
+  }, [appUpdateState.readyFilePath, appUpdateState.status, showToast, updateInfo]);
 
   const handleCancelDownload = useCallback(async () => {
     await window.electron.appUpdate.cancelDownload();
-    setUpdateModalState('info');
-    setDownloadProgress(null);
   }, []);
 
-  const handleRetryUpdate = useCallback(() => {
-    setUpdateModalState('info');
-    setUpdateError(null);
-    setDownloadProgress(null);
-  }, []);
+  const handleRetryUpdate = useCallback(async () => {
+    if (!updateInfo) return;
+    if (updateInfo.url.includes('#') || updateInfo.url.endsWith('/download-list')) {
+      setShowUpdateModal(false);
+      await window.electron.shell.openExternal(updateInfo.url);
+      return;
+    }
+    await window.electron.appUpdate.retryDownload();
+  }, [updateInfo]);
 
   const handlePrivacyAccept = useCallback(async () => {
     await window.electron.store.set('privacy_agreed', true);
@@ -553,7 +568,7 @@ const App: React.FC = () => {
     const maybeCheck = async () => {
       if (cancelled) return;
       const now = Date.now();
-      if (lastCheckTime > 0 && now - lastCheckTime < UPDATE_POLL_INTERVAL_MS) return;
+      if (lastCheckTime > 0 && now - lastCheckTime < APP_UPDATE_POLL_INTERVAL_MS) return;
       lastCheckTime = now;
       await runUpdateCheck();
     };
@@ -564,7 +579,7 @@ const App: React.FC = () => {
     // 心跳：每 30 分钟检测是否距上次检查已超过 12 小时
     const timer = window.setInterval(() => {
       void maybeCheck();
-    }, UPDATE_HEARTBEAT_INTERVAL_MS);
+    }, APP_UPDATE_HEARTBEAT_INTERVAL_MS);
 
     // 窗口恢复可见时检测（覆盖休眠唤醒场景）
     const handleVisibilityChange = () => {
@@ -611,9 +626,14 @@ const App: React.FC = () => {
   }, [pendingPermission, handlePermissionResponse]);
 
   const isOverlayActive = showSettings || showUpdateModal || pendingPermission !== null;
-  const updateBadge = updateInfo ? (
+  const shouldShowUpdateBadge =
+    updateInfo &&
+    appUpdateState.status !== AppUpdateStatus.Checking &&
+    appUpdateState.status !== AppUpdateStatus.Downloading;
+  const updateBadge = shouldShowUpdateBadge ? (
     <AppUpdateBadge
       latestVersion={updateInfo.latestVersion}
+      status={appUpdateState.status}
       onClick={handleOpenUpdateModal}
     />
   ) : null;
@@ -754,19 +774,13 @@ const App: React.FC = () => {
       )}
       {showUpdateModal && updateInfo && (
         <AppUpdateModal
-          updateInfo={updateInfo}
+          updateState={appUpdateState}
           onCancel={() => {
-            if (updateModalState === 'info' || updateModalState === 'error') {
+            if (appUpdateState.status !== AppUpdateStatus.Downloading && appUpdateState.status !== AppUpdateStatus.Installing) {
               setShowUpdateModal(false);
-              setUpdateModalState('info');
-              setUpdateError(null);
-              setDownloadProgress(null);
             }
           }}
           onConfirm={handleConfirmUpdate}
-          modalState={updateModalState}
-          downloadProgress={downloadProgress}
-          errorMessage={updateError}
           onCancelDownload={handleCancelDownload}
           onRetry={handleRetryUpdate}
         />

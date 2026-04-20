@@ -2,6 +2,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 import { IpcChannel as ScheduledTaskIpc } from '../scheduledTask/constants';
+import { AppUpdateIpc } from '../shared/appUpdate/constants';
 import type { Platform } from '../shared/platform';
 import { NimQrLoginIpc } from './ipcHandlers/nimQrLogin';
 import { OpenClawSessionIpc } from './openclawSession/constants';
@@ -348,13 +349,15 @@ contextBridge.exposeInMainWorld('electron', {
     getSystemLocale: () => ipcRenderer.invoke('app:getSystemLocale'),
   },
   appUpdate: {
-    download: (url: string) => ipcRenderer.invoke('appUpdate:download', url),
-    cancelDownload: () => ipcRenderer.invoke('appUpdate:cancelDownload'),
-    install: (filePath: string) => ipcRenderer.invoke('appUpdate:install', filePath),
-    onDownloadProgress: (callback: (data: any) => void) => {
+    getState: () => ipcRenderer.invoke(AppUpdateIpc.GetState),
+    checkNow: (options?: { manual?: boolean }) => ipcRenderer.invoke(AppUpdateIpc.CheckNow, options),
+    retryDownload: () => ipcRenderer.invoke(AppUpdateIpc.RetryDownload),
+    cancelDownload: () => ipcRenderer.invoke(AppUpdateIpc.CancelDownload),
+    installReady: () => ipcRenderer.invoke(AppUpdateIpc.InstallReady),
+    onStateChanged: (callback: (data: any) => void) => {
       const handler = (_event: any, data: any) => callback(data);
-      ipcRenderer.on('appUpdate:downloadProgress', handler);
-      return () => ipcRenderer.removeListener('appUpdate:downloadProgress', handler);
+      ipcRenderer.on(AppUpdateIpc.StateChanged, handler);
+      return () => ipcRenderer.removeListener(AppUpdateIpc.StateChanged, handler);
     },
   },
   log: {

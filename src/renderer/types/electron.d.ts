@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { OpenClawSessionPatch } from '../../common/openclawSession';
+import type { AppUpdateCheckResult, AppUpdateRuntimeState } from '../../shared/appUpdate/constants';
 interface ApiResponse {
   ok: boolean;
   status: number;
@@ -126,13 +127,6 @@ interface OpenClawEngineStatus {
 
 interface OpenClawSessionPolicyConfig {
   keepAlive: '1d' | '7d' | '30d' | '365d';
-}
-
-interface AppUpdateDownloadProgress {
-  received: number;
-  total: number | undefined;
-  percent: number | undefined;
-  speed: number | undefined;
 }
 
 interface WindowState {
@@ -426,10 +420,12 @@ interface IElectronAPI {
     getSystemLocale: () => Promise<string>;
   };
   appUpdate: {
-    download: (url: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
-    cancelDownload: () => Promise<{ success: boolean }>;
-    install: (filePath: string) => Promise<{ success: boolean; error?: string }>;
-    onDownloadProgress: (callback: (data: AppUpdateDownloadProgress) => void) => () => void;
+    getState: () => Promise<AppUpdateRuntimeState>;
+    checkNow: (options?: { manual?: boolean }) => Promise<AppUpdateCheckResult>;
+    retryDownload: () => Promise<{ success: boolean; state: AppUpdateRuntimeState }>;
+    cancelDownload: () => Promise<{ success: boolean; state: AppUpdateRuntimeState }>;
+    installReady: () => Promise<{ success: boolean; state: AppUpdateRuntimeState; error?: string }>;
+    onStateChanged: (callback: (data: AppUpdateRuntimeState) => void) => () => void;
   };
   log: {
     getPath: () => Promise<string>;
