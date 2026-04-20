@@ -3,9 +3,10 @@
  */
 
 import { execSync, spawn, spawnSync } from 'child_process';
-import path from 'path';
-import fs from 'fs';
 import { app } from 'electron';
+import fs from 'fs';
+import path from 'path';
+
 import { cpRecursiveSync } from './fsCompat';
 import { getElectronNodeRuntimePath } from './libs/coworkUtil';
 import { appendPythonRuntimeToEnv } from './libs/pythonRuntime';
