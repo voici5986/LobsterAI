@@ -352,7 +352,7 @@ contextBridge.exposeInMainWorld('electron', {
   },
   appUpdate: {
     getState: () => ipcRenderer.invoke(AppUpdateIpc.GetState),
-    checkNow: (options?: { manual?: boolean }) => ipcRenderer.invoke(AppUpdateIpc.CheckNow, options),
+    checkNow: (options?: { manual?: boolean; userId?: string | null }) => ipcRenderer.invoke(AppUpdateIpc.CheckNow, options),
     retryDownload: () => ipcRenderer.invoke(AppUpdateIpc.RetryDownload),
     cancelDownload: () => ipcRenderer.invoke(AppUpdateIpc.CancelDownload),
     installReady: () => ipcRenderer.invoke(AppUpdateIpc.InstallReady),

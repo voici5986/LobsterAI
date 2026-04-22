@@ -78,6 +78,7 @@ const App: React.FC = () => {
   const selectedModel = useSelector((state: RootState) => state.model.selectedModel);
   const currentSessionId = useSelector(selectCurrentSessionId);
   const pendingPermission = useSelector(selectFirstPendingPermission);
+  const authUser = useSelector((state: RootState) => state.auth.user);
   const isWindows = window.electron.platform === 'win32';
 
   const waitWithTimeout = useCallback(
@@ -381,7 +382,7 @@ const App: React.FC = () => {
 
   const runUpdateCheck = useCallback(async () => {
     try {
-      const result = await window.electron.appUpdate.checkNow();
+      const result = await window.electron.appUpdate.checkNow({ userId: authUser?.yid });
       setAppUpdateState(result.state);
       if (!result.success) {
         console.error('[App] app update check failed:', result.error);
@@ -389,7 +390,7 @@ const App: React.FC = () => {
     } catch (error) {
       console.error('Failed to check app update:', error);
     }
-  }, []);
+  }, [authUser]);
 
   const updateInfo = appUpdateState.info;
 

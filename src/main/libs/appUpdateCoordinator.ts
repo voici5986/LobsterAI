@@ -87,7 +87,7 @@ export class AppUpdateCoordinator {
     this.autoOpenReadyModal = false;
   }
 
-  async checkNow(options?: { manual?: boolean }): Promise<AppUpdateCheckResult> {
+  async checkNow(options?: { manual?: boolean; userId?: string | null }): Promise<AppUpdateCheckResult> {
     const targetSource = options?.manual === true ? AppUpdateSource.Manual : AppUpdateSource.Auto;
     console.log(
       `[AppUpdate] checkNow started, manual=${options?.manual === true}, status=${this.state.status}, source=${this.state.source ?? 'none'}, readyFilePath=${this.state.readyFilePath ?? 'none'}`,
@@ -133,7 +133,7 @@ export class AppUpdateCoordinator {
 
     try {
       const currentVersion = this.resolveCurrentVersion();
-      const info = await this.fetchUpdateInfo(currentVersion, options?.manual === true);
+      const info = await this.fetchUpdateInfo(currentVersion, options?.manual === true, options?.userId);
       if (!this.isFlowActive(flowId, targetSource)) {
         console.log(
           `[AppUpdate] ignoring stale check result after fetch, flowId=${flowId}, source=${targetSource}, activeFlowId=${this.activeFlowId}, activeSource=${this.activeFlowSource ?? 'none'}`,
@@ -438,9 +438,10 @@ export class AppUpdateCoordinator {
   private async fetchUpdateInfo(
     currentVersion: string,
     manual: boolean,
+    userId?: string | null,
   ): Promise<AppUpdateInfo | null> {
     const baseUrl = manual ? getManualUpdateCheckUrl() : getUpdateCheckUrl();
-    const qs = this.getUpdateQueryString();
+    const qs = this.getUpdateQueryString(userId);
     const url = qs ? `${baseUrl}?${qs}` : baseUrl;
     console.log(`[AppUpdate] checking update, currentVersion=${currentVersion}, url=${url}`);
 
@@ -542,11 +543,14 @@ export class AppUpdateCoordinator {
     return app.getVersion();
   }
 
-  private getUpdateQueryString(): string {
+  private getUpdateQueryString(userId?: string | null): string {
     const params = new URLSearchParams();
     const installationId = this.getOrCreateInstallationId();
     if (installationId) {
       params.append('uuid', installationId);
+    }
+    if (userId) {
+      params.append('userId', userId);
     }
     return params.toString();
   }

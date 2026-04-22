@@ -16,6 +16,7 @@ import { i18nService, LanguageType } from '../services/i18n';
 import { imService } from '../services/im';
 import { themeService } from '../services/theme';
 import { selectCoworkConfig } from '../store/selectors/coworkSelectors';
+import type { RootState } from '../store';
 import { setAvailableModels } from '../store/slices/modelSlice';
 import type {
   CoworkAgentEngine,
@@ -689,11 +690,13 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
     }
   }, []);
 
+  const authUser = useSelector((state: RootState) => state.auth.user);
+
   const handleCheckUpdate = useCallback(async () => {
     if (updateCheckStatus === 'checking' || !appVersion) return;
     setUpdateCheckStatus('checking');
     try {
-      const result = await window.electron.appUpdate.checkNow({ manual: true });
+      const result = await window.electron.appUpdate.checkNow({ manual: true, userId: authUser?.yid });
       if (!result.success) {
         throw new Error(result.error || 'Update check failed');
       }
@@ -731,7 +734,7 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
         updateCheckTimerRef.current = null;
       }, 3000);
     }
-  }, [appVersion, updateCheckStatus, onUpdateFound]);
+  }, [appVersion, authUser, updateCheckStatus, onUpdateFound]);
 
   const updateButtonLabel = useMemo(() => {
     if (

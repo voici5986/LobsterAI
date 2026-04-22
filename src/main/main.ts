@@ -2276,6 +2276,7 @@ if (!gotTheLock) {
         return { success: false, error: body.message || 'Exchange failed' };
       }
       saveAuthTokens(body.data.accessToken, body.data.refreshToken);
+      console.log('[Auth] exchange user data:', JSON.stringify(body.data.user));
       return { success: true, user: body.data.user, quota: normalizeQuota(body.data.quota) };
     } catch (error) {
       console.error('[Auth] exchange failed:', error);
@@ -2302,6 +2303,7 @@ if (!gotTheLock) {
           quota = normalizeQuota(quotaBody.data);
         }
       }
+      console.log('[Auth] getUser profile data:', JSON.stringify(profileBody.data));
       return { success: true, user: profileBody.data, quota };
     } catch {
       return { success: false };

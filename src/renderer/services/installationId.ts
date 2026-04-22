@@ -58,7 +58,7 @@ export const getUpdateQueryString = async (): Promise<string> => {
       params.append('uuid', installationId);
     }
 
-    const authUser = store.getState().auth.user as Record<string, unknown> | null;
+    const authUser = store.getState().auth.user;
     const userId = authUser?.yid;
     if (userId && typeof userId === 'string') {
       params.append('userId', userId);
