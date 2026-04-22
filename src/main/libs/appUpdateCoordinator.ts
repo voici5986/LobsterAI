@@ -441,7 +441,7 @@ export class AppUpdateCoordinator {
     userId?: string | null,
   ): Promise<AppUpdateInfo | null> {
     const baseUrl = manual ? getManualUpdateCheckUrl() : getUpdateCheckUrl();
-    const qs = this.getUpdateQueryString(userId);
+    const qs = this.getUpdateQueryString(userId, currentVersion);
     const url = qs ? `${baseUrl}?${qs}` : baseUrl;
     console.log(`[AppUpdate] checking update, currentVersion=${currentVersion}, url=${url}`);
 
@@ -543,7 +543,7 @@ export class AppUpdateCoordinator {
     return app.getVersion();
   }
 
-  private getUpdateQueryString(userId?: string | null): string {
+  private getUpdateQueryString(userId?: string | null, version?: string): string {
     const params = new URLSearchParams();
     const installationId = this.getOrCreateInstallationId();
     if (installationId) {
@@ -551,6 +551,9 @@ export class AppUpdateCoordinator {
     }
     if (userId) {
       params.append('userId', userId);
+    }
+    if (version) {
+      params.append('version', version);
     }
     return params.toString();
   }
