@@ -48,3 +48,9 @@ export const getFallbackDownloadUrl = (): string => (
     ? 'https://lobsterai.inner.youdao.com/#/download-list'
     : 'https://lobsterai.youdao.com/#/download-list'
 );
+
+export const getSkillStoreUrl = (): string => (
+  isTestMode()
+    ? 'https://api-overmind.youdao.com/openapi/get/luna/hardware/lobsterai/test/skill-store'
+    : 'https://api-overmind.youdao.com/openapi/get/luna/hardware/lobsterai/prod/skill-store'
+);
