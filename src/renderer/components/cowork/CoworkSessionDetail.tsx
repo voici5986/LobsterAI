@@ -1182,11 +1182,11 @@ export const UserMessageItem: React.FC<{
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div className="max-w-4xl min-w-[320px] mx-auto">
+      <div className="max-w-5xl min-w-[320px] mx-auto">
         <div className="pl-4 sm:pl-8 md:pl-12">
           <div className="flex items-start gap-3 flex-row-reverse">
             <div className="w-full min-w-0 flex flex-col items-end">
-              <div className="w-fit max-w-[48rem] rounded-2xl px-4 py-2.5 bg-surface text-foreground shadow-subtle">
+              <div className="w-fit max-w-[54rem] rounded-2xl px-4 py-2.5 bg-surface text-foreground shadow-subtle">
                 {message.content?.trim() && (
                   <MarkdownContent
                     content={message.content}
@@ -1334,7 +1334,7 @@ const StreamingActivityBar: React.FC<{ messages: CoworkMessage[] }> = ({ message
 
   return (
     <div className="shrink-0 animate-fade-in px-4">
-      <div className="max-w-4xl min-w-[320px] mx-auto">
+      <div className="max-w-5xl min-w-[320px] mx-auto">
         <div className="streaming-bar" />
         <div className="py-1">
           <span className="text-xs text-secondary">
@@ -1493,7 +1493,7 @@ export const AssistantTurnBlock: React.FC<{
 
   return (
     <div className="px-4 py-2">
-      <div className="max-w-4xl min-w-[320px] mx-auto">
+      <div className="max-w-5xl min-w-[320px] mx-auto">
         <div className="flex items-start gap-3">
           <div className="flex-1 min-w-0 px-4 py-3 space-y-3">
             {visibleAssistantItems.map((item, index) => {
@@ -2792,7 +2792,7 @@ const CoworkSessionDetail: React.FC<CoworkSessionDetailProps> = ({
 
       {/* Input Area */}
       <div className="p-4 shrink-0">
-        <div className="max-w-4xl min-w-[320px] mx-auto">
+        <div className="max-w-5xl min-w-[320px] mx-auto">
           <CoworkPromptInput
             ref={promptInputRef}
             onSubmit={onContinue}
