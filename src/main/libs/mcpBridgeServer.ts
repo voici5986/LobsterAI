@@ -242,9 +242,20 @@ export class McpBridgeServer {
     // Abort in-flight MCP tool calls when the gateway drops the HTTP connection
     // (e.g. after chat.abort).  This prevents zombie 60-second MCP timeouts from
     // keeping the gateway run active and blocking new user messages.
+    //
+    // Listen on `res` (ServerResponse), NOT `req` (IncomingMessage).
+    // `req` is a Readable stream that emits `close` after the body is consumed
+    // (auto-destroy via nextTick, which runs before the Promise microtask from
+    // readBody), causing the signal to be aborted before callTool even starts.
+    // `res.close` fires when the underlying socket disconnects; we only abort
+    // if the response hasn't been fully sent yet (i.e. a premature disconnect).
     const abortController = new AbortController();
-    const onClose = () => abortController.abort();
-    req.on('close', onClose);
+    const onClose = () => {
+      if (!res.writableFinished) {
+        abortController.abort();
+      }
+    };
+    res.on('close', onClose);
 
     try {
       const body = await this.readBody(req);
@@ -286,7 +297,7 @@ export class McpBridgeServer {
         }));
       }
     } finally {
-      req.removeListener('close', onClose);
+      res.removeListener('close', onClose);
     }
   }
 
