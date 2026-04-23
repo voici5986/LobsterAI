@@ -565,6 +565,18 @@ export class CoworkStore {
     return this.db.prepare(sql).all(...params) as T[];
   }
 
+  private upsertConfig(key: string, value: string, now: number): void {
+    this.db
+      .prepare(
+        `INSERT INTO cowork_config (key, value, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET
+           value = excluded.value,
+           updated_at = excluded.updated_at`,
+      )
+      .run(key, value, now);
+  }
+
   createSession(
     title: string,
     cwd: string,
@@ -1123,228 +1135,52 @@ export class CoworkStore {
     const now = Date.now();
 
     if (config.workingDirectory !== undefined) {
-      this.db
-        .prepare(
-          `
-        INSERT INTO cowork_config (key, value, updated_at)
-        VALUES ('workingDirectory', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at
-      `,
-        )
-        .run(config.workingDirectory, now);
+      this.upsertConfig('workingDirectory', config.workingDirectory, now);
     }
-
     if (config.executionMode !== undefined) {
-      this.db
-        .prepare(
-          `
-        INSERT INTO cowork_config (key, value, updated_at)
-        VALUES ('executionMode', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at
-      `,
-        )
-        .run(config.executionMode, now);
+      this.upsertConfig('executionMode', config.executionMode, now);
     }
-
     if (config.agentEngine !== undefined) {
-      const normalizedAgentEngine = normalizeCoworkAgentEngineValue(config.agentEngine);
-      this.db
-        .prepare(
-          `
-        INSERT INTO cowork_config (key, value, updated_at)
-        VALUES ('agentEngine', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at
-      `,
-        )
-        .run(normalizedAgentEngine, now);
+      this.upsertConfig('agentEngine', normalizeCoworkAgentEngineValue(config.agentEngine), now);
     }
-
     if (config.memoryEnabled !== undefined) {
-      this.db
-        .prepare(
-          `
-        INSERT INTO cowork_config (key, value, updated_at)
-        VALUES ('memoryEnabled', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at
-      `,
-        )
-        .run(config.memoryEnabled ? '1' : '0', now);
+      this.upsertConfig('memoryEnabled', config.memoryEnabled ? '1' : '0', now);
     }
-
     if (config.memoryImplicitUpdateEnabled !== undefined) {
-      this.db
-        .prepare(
-          `
-        INSERT INTO cowork_config (key, value, updated_at)
-        VALUES ('memoryImplicitUpdateEnabled', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at
-      `,
-        )
-        .run(config.memoryImplicitUpdateEnabled ? '1' : '0', now);
+      this.upsertConfig('memoryImplicitUpdateEnabled', config.memoryImplicitUpdateEnabled ? '1' : '0', now);
     }
-
     if (config.memoryLlmJudgeEnabled !== undefined) {
-      this.db
-        .prepare(
-          `
-        INSERT INTO cowork_config (key, value, updated_at)
-        VALUES ('memoryLlmJudgeEnabled', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at
-      `,
-        )
-        .run(config.memoryLlmJudgeEnabled ? '1' : '0', now);
+      this.upsertConfig('memoryLlmJudgeEnabled', config.memoryLlmJudgeEnabled ? '1' : '0', now);
     }
-
     if (config.memoryGuardLevel !== undefined) {
-      this.db
-        .prepare(
-          `
-        INSERT INTO cowork_config (key, value, updated_at)
-        VALUES ('memoryGuardLevel', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at
-      `,
-        )
-        .run(normalizeMemoryGuardLevel(config.memoryGuardLevel), now);
+      this.upsertConfig('memoryGuardLevel', normalizeMemoryGuardLevel(config.memoryGuardLevel), now);
     }
-
     if (config.memoryUserMemoriesMaxItems !== undefined) {
-      this.db
-        .prepare(
-          `
-        INSERT INTO cowork_config (key, value, updated_at)
-        VALUES ('memoryUserMemoriesMaxItems', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at
-      `,
-        )
-        .run(String(clampMemoryUserMemoriesMaxItems(config.memoryUserMemoriesMaxItems)), now);
+      this.upsertConfig('memoryUserMemoriesMaxItems', String(clampMemoryUserMemoriesMaxItems(config.memoryUserMemoriesMaxItems)), now);
     }
-
     if (config.skipMissedJobs !== undefined) {
-      this.db
-        .prepare(
-          `
-        INSERT INTO cowork_config (key, value, updated_at)
-        VALUES ('skipMissedJobs', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at
-      `,
-        )
-        .run(config.skipMissedJobs ? '1' : '0', now);
+      this.upsertConfig('skipMissedJobs', config.skipMissedJobs ? '1' : '0', now);
     }
-
     if (config.embeddingEnabled !== undefined) {
-      this.db
-        .prepare(
-          `
-        INSERT INTO cowork_config (key, value, updated_at)
-        VALUES ('embeddingEnabled', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at
-      `,
-        )
-        .run(config.embeddingEnabled ? '1' : '0', now);
+      this.upsertConfig('embeddingEnabled', config.embeddingEnabled ? '1' : '0', now);
     }
-
     if (config.embeddingProvider !== undefined) {
-      this.db
-        .prepare(
-          `
-        INSERT INTO cowork_config (key, value, updated_at)
-        VALUES ('embeddingProvider', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at
-      `,
-        )
-        .run(String(config.embeddingProvider), now);
+      this.upsertConfig('embeddingProvider', String(config.embeddingProvider), now);
     }
-
     if (config.embeddingModel !== undefined) {
-      this.db
-        .prepare(
-          `
-        INSERT INTO cowork_config (key, value, updated_at)
-        VALUES ('embeddingModel', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at
-      `,
-        )
-        .run(String(config.embeddingModel), now);
+      this.upsertConfig('embeddingModel', String(config.embeddingModel), now);
     }
-
     if (config.embeddingLocalModelPath !== undefined) {
-      this.db
-        .prepare(
-          `
-        INSERT INTO cowork_config (key, value, updated_at)
-        VALUES ('embeddingLocalModelPath', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at
-      `,
-        )
-        .run(String(config.embeddingLocalModelPath), now);
+      this.upsertConfig('embeddingLocalModelPath', String(config.embeddingLocalModelPath), now);
     }
-
     if (config.embeddingVectorWeight !== undefined) {
-      this.db
-        .prepare(
-          `
-        INSERT INTO cowork_config (key, value, updated_at)
-        VALUES ('embeddingVectorWeight', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at
-      `,
-        )
-        .run(String(Math.max(0, Math.min(1, config.embeddingVectorWeight))), now);
+      this.upsertConfig('embeddingVectorWeight', String(Math.max(0, Math.min(1, config.embeddingVectorWeight))), now);
     }
-
     if (config.embeddingRemoteBaseUrl !== undefined) {
-      this.db
-        .prepare(
-          `
-        INSERT INTO cowork_config (key, value, updated_at)
-        VALUES ('embeddingRemoteBaseUrl', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at
-      `,
-        )
-        .run(String(config.embeddingRemoteBaseUrl), now);
+      this.upsertConfig('embeddingRemoteBaseUrl', String(config.embeddingRemoteBaseUrl), now);
     }
-
     if (config.embeddingRemoteApiKey !== undefined) {
-      this.db
-        .prepare(
-          `
-        INSERT INTO cowork_config (key, value, updated_at)
-        VALUES ('embeddingRemoteApiKey', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at
-      `,
-        )
-        .run(String(config.embeddingRemoteApiKey), now);
+      this.upsertConfig('embeddingRemoteApiKey', String(config.embeddingRemoteApiKey), now);
     }
   }
 

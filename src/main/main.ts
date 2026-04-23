@@ -3532,6 +3532,38 @@ if (!gotTheLock) {
       };
     }
   });
+
+  const VALID_EMBEDDING_PROVIDERS = ['local', 'openai', 'gemini', 'voyage', 'mistral', 'ollama'] as const;
+
+  function normalizeEmbeddingConfig(config: {
+    embeddingEnabled?: boolean;
+    embeddingProvider?: string;
+    embeddingModel?: string;
+    embeddingLocalModelPath?: string;
+    embeddingVectorWeight?: number;
+    embeddingRemoteBaseUrl?: string;
+    embeddingRemoteApiKey?: string;
+  }) {
+    return {
+      embeddingEnabled: typeof config.embeddingEnabled === 'boolean'
+        ? config.embeddingEnabled : undefined,
+      embeddingProvider: typeof config.embeddingProvider === 'string'
+        && (VALID_EMBEDDING_PROVIDERS as readonly string[]).includes(config.embeddingProvider)
+        ? config.embeddingProvider : undefined,
+      embeddingModel: typeof config.embeddingModel === 'string'
+        ? config.embeddingModel.trim() : undefined,
+      embeddingLocalModelPath: typeof config.embeddingLocalModelPath === 'string'
+        ? config.embeddingLocalModelPath.trim() : undefined,
+      embeddingVectorWeight: typeof config.embeddingVectorWeight === 'number'
+        && Number.isFinite(config.embeddingVectorWeight)
+        ? Math.max(0, Math.min(1, config.embeddingVectorWeight)) : undefined,
+      embeddingRemoteBaseUrl: typeof config.embeddingRemoteBaseUrl === 'string'
+        ? config.embeddingRemoteBaseUrl.trim() : undefined,
+      embeddingRemoteApiKey: typeof config.embeddingRemoteApiKey === 'string'
+        ? config.embeddingRemoteApiKey.trim() : undefined,
+    };
+  }
+
   ipcMain.handle('cowork:config:set', async (_event, config: {
     workingDirectory?: string;
     executionMode?: 'auto' | 'local' | 'sandbox';
@@ -3582,29 +3614,7 @@ if (!gotTheLock) {
       const normalizedSkipMissedJobs = typeof config.skipMissedJobs === 'boolean'
         ? config.skipMissedJobs
         : undefined;
-      const normalizedEmbeddingEnabled = typeof config.embeddingEnabled === 'boolean'
-        ? config.embeddingEnabled
-        : undefined;
-      const normalizedEmbeddingProvider = typeof config.embeddingProvider === 'string'
-        && ['local', 'openai', 'gemini', 'voyage', 'mistral', 'ollama'].includes(config.embeddingProvider)
-        ? config.embeddingProvider
-        : undefined;
-      const normalizedEmbeddingModel = typeof config.embeddingModel === 'string'
-        ? config.embeddingModel.trim()
-        : undefined;
-      const normalizedEmbeddingLocalModelPath = typeof config.embeddingLocalModelPath === 'string'
-        ? config.embeddingLocalModelPath.trim()
-        : undefined;
-      const normalizedEmbeddingVectorWeight = typeof config.embeddingVectorWeight === 'number'
-        && Number.isFinite(config.embeddingVectorWeight)
-        ? Math.max(0, Math.min(1, config.embeddingVectorWeight))
-        : undefined;
-      const normalizedEmbeddingRemoteBaseUrl = typeof config.embeddingRemoteBaseUrl === 'string'
-        ? config.embeddingRemoteBaseUrl.trim()
-        : undefined;
-      const normalizedEmbeddingRemoteApiKey = typeof config.embeddingRemoteApiKey === 'string'
-        ? config.embeddingRemoteApiKey.trim()
-        : undefined;
+      const normalizedEmbedding = normalizeEmbeddingConfig(config);
       const normalizedConfig: Parameters<CoworkStore['setConfig']>[0] = {
         ...config,
         executionMode: normalizedExecutionMode,
@@ -3615,13 +3625,7 @@ if (!gotTheLock) {
         memoryGuardLevel: normalizedMemoryGuardLevel,
         memoryUserMemoriesMaxItems: normalizedMemoryUserMemoriesMaxItems,
         skipMissedJobs: normalizedSkipMissedJobs,
-        embeddingEnabled: normalizedEmbeddingEnabled,
-        embeddingProvider: normalizedEmbeddingProvider,
-        embeddingModel: normalizedEmbeddingModel,
-        embeddingLocalModelPath: normalizedEmbeddingLocalModelPath,
-        embeddingVectorWeight: normalizedEmbeddingVectorWeight,
-        embeddingRemoteBaseUrl: normalizedEmbeddingRemoteBaseUrl,
-        embeddingRemoteApiKey: normalizedEmbeddingRemoteApiKey,
+        ...normalizedEmbedding,
       };
       const previousConfig = getCoworkStore().getConfig();
       const previousWorkingDir = previousConfig.workingDirectory;
@@ -3650,13 +3654,7 @@ if (!gotTheLock) {
 
       const shouldSyncOpenClawConfig = normalizedExecutionMode !== undefined
         || normalizedAgentEngine !== undefined
-        || normalizedEmbeddingEnabled !== undefined
-        || normalizedEmbeddingProvider !== undefined
-        || normalizedEmbeddingModel !== undefined
-        || normalizedEmbeddingLocalModelPath !== undefined
-        || normalizedEmbeddingVectorWeight !== undefined
-        || normalizedEmbeddingRemoteBaseUrl !== undefined
-        || normalizedEmbeddingRemoteApiKey !== undefined
+        || Object.values(normalizedEmbedding).some(v => v !== undefined)
         || (normalizedConfig.workingDirectory !== undefined && normalizedConfig.workingDirectory !== previousWorkingDir);
       if (shouldSyncOpenClawConfig) {
         const syncResult = await syncOpenClawConfig({

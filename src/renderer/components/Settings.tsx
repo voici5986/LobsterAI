@@ -3,7 +3,7 @@ import { ArrowTopRightOnSquareIcon, ChatBubbleLeftIcon, CheckCircleIcon, Cog6Too
 import React, { useCallback,useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
-import { AppUpdateSource,type AppUpdateInfo,type AppUpdateRuntimeState,AppUpdateStatus } from '../../shared/appUpdate/constants';
+import { type AppUpdateInfo,type AppUpdateRuntimeState,AppUpdateSource,AppUpdateStatus } from '../../shared/appUpdate/constants';
 import { ProviderName, ProviderRegistry, resolveCodingPlanBaseUrl } from '../../shared/providers';
 import { type AppConfig, defaultConfig, getCustomProviderDefaultName, getProviderDisplayName, getVisibleProviders, isCustomProvider } from '../config';
 import { APP_ID, EXPORT_FORMAT_TYPE, EXPORT_PASSWORD } from '../constants/app';
@@ -15,8 +15,8 @@ import { decryptSecret, decryptWithPassword, EncryptedPayload, encryptWithPasswo
 import { i18nService, LanguageType } from '../services/i18n';
 import { imService } from '../services/im';
 import { themeService } from '../services/theme';
-import { selectCoworkConfig } from '../store/selectors/coworkSelectors';
 import type { RootState } from '../store';
+import { selectCoworkConfig } from '../store/selectors/coworkSelectors';
 import { setAvailableModels } from '../store/slices/modelSlice';
 import type {
   CoworkAgentEngine,
@@ -27,6 +27,7 @@ import type {
 } from '../types/cowork';
 import { OpenClawSessionKeepAlive as OpenClawSessionKeepAliveValues } from '../types/cowork';
 import Modal from './common/Modal';
+import EmbeddingSettingsSection from './cowork/EmbeddingSettingsSection';
 import ErrorMessage from './ErrorMessage';
 import BrainIcon from './icons/BrainIcon';
 import PencilIcon from './icons/PencilIcon';
@@ -812,7 +813,6 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
   const [embeddingVectorWeight, setEmbeddingVectorWeight] = useState<number>(coworkConfig.embeddingVectorWeight ?? 0.7);
   const [embeddingRemoteBaseUrl, setEmbeddingRemoteBaseUrl] = useState<string>(coworkConfig.embeddingRemoteBaseUrl ?? '');
   const [embeddingRemoteApiKey, setEmbeddingRemoteApiKey] = useState<string>(coworkConfig.embeddingRemoteApiKey ?? '');
-  const [showEmbeddingAdvanced, setShowEmbeddingAdvanced] = useState<boolean>(false);
   const [openClawSessionKeepAlive, setOpenClawSessionKeepAlive] = useState<OpenClawSessionKeepAlive>(
     coworkConfig.openClawSessionPolicy?.keepAlive || OpenClawSessionKeepAliveValues.ThirtyDays,
   );
@@ -3075,166 +3075,22 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
             </div>
 
             {/* Section 3: Embedding / Vector Memory Search */}
-            <div className="space-y-3 rounded-xl border px-4 py-4 border-border">
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <div className="text-sm font-medium text-foreground">
-                    {i18nService.t('coworkMemoryEmbeddingEnabled')}
-                  </div>
-                  <div className="text-xs text-secondary">
-                    {i18nService.t('coworkMemoryEmbeddingEnabledHint')}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={embeddingEnabled}
-                  onClick={() => setEmbeddingEnabled((prev) => !prev)}
-                  className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
-                    embeddingEnabled ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      embeddingEnabled ? 'translate-x-6' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
-
-              {embeddingEnabled && (
-                <div className="space-y-3 pt-2">
-                  {/* Provider dropdown */}
-                  <div>
-                    <label className="block text-xs font-medium text-foreground mb-1">
-                      {i18nService.t('coworkMemoryEmbeddingProvider')}
-                    </label>
-                    <select
-                      value={embeddingProvider}
-                      onChange={(e) => setEmbeddingProvider(e.target.value)}
-                      className="w-full rounded-lg border px-3 py-2 text-sm border-border bg-surface"
-                    >
-                      <option value="local">{i18nService.t('coworkMemoryEmbeddingProviderLocal')}</option>
-                      <option value="openai">{i18nService.t('coworkMemoryEmbeddingProviderOpenai')}</option>
-                      <option value="gemini">{i18nService.t('coworkMemoryEmbeddingProviderGemini')}</option>
-                      <option value="voyage">{i18nService.t('coworkMemoryEmbeddingProviderVoyage')}</option>
-                      <option value="mistral">{i18nService.t('coworkMemoryEmbeddingProviderMistral')}</option>
-                      <option value="ollama">{i18nService.t('coworkMemoryEmbeddingProviderOllama')}</option>
-                    </select>
-                    <div className="text-xs text-secondary mt-1">
-                      {i18nService.t('coworkMemoryEmbeddingProviderHint')}
-                    </div>
-                  </div>
-
-                  {/* Model ID */}
-                  <div>
-                    <label className="block text-xs font-medium text-foreground mb-1">
-                      {i18nService.t('coworkMemoryEmbeddingModel')}
-                    </label>
-                    <input
-                      type="text"
-                      value={embeddingModel}
-                      onChange={(e) => setEmbeddingModel(e.target.value)}
-                      placeholder={embeddingProvider === 'local'
-                        ? 'hf:ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf'
-                        : 'text-embedding-3-large'}
-                      className="w-full rounded-lg border px-3 py-2 text-sm border-border bg-surface font-mono"
-                    />
-                    <div className="text-xs text-secondary mt-1">
-                      {i18nService.t('coworkMemoryEmbeddingModelHint')}
-                    </div>
-                  </div>
-
-                  {/* Remote config fields (shown for non-local providers) */}
-                  {embeddingProvider !== 'local' && (
-                    <>
-                      <div>
-                        <label className="block text-xs font-medium text-foreground mb-1">
-                          {i18nService.t('coworkMemoryEmbeddingRemoteBaseUrl')}
-                        </label>
-                        <input
-                          type="text"
-                          value={embeddingRemoteBaseUrl}
-                          onChange={(e) => setEmbeddingRemoteBaseUrl(e.target.value)}
-                          placeholder="https://api.openai.com/v1"
-                          className="w-full rounded-lg border px-3 py-2 text-sm border-border bg-surface font-mono"
-                        />
-                        <div className="text-xs text-secondary mt-1">
-                          {i18nService.t('coworkMemoryEmbeddingRemoteBaseUrlHint')}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-medium text-foreground mb-1">
-                          {i18nService.t('coworkMemoryEmbeddingRemoteApiKey')}
-                        </label>
-                        <input
-                          type="password"
-                          value={embeddingRemoteApiKey}
-                          onChange={(e) => setEmbeddingRemoteApiKey(e.target.value)}
-                          className="w-full rounded-lg border px-3 py-2 text-sm border-border bg-surface font-mono"
-                        />
-                        <div className="text-xs text-secondary mt-1">
-                          {i18nService.t('coworkMemoryEmbeddingRemoteApiKeyHint')}
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                  {/* Collapsible advanced section */}
-                  <button
-                    type="button"
-                    onClick={() => setShowEmbeddingAdvanced((prev) => !prev)}
-                    className="text-xs text-primary hover:underline"
-                  >
-                    {showEmbeddingAdvanced
-                      ? i18nService.t('coworkMemoryAdvancedHide')
-                      : i18nService.t('coworkMemoryAdvancedShow')}
-                  </button>
-
-                  {showEmbeddingAdvanced && (
-                    <div className="space-y-3">
-                      {/* Local model path (only relevant when provider=local) */}
-                      {embeddingProvider === 'local' && (
-                        <div>
-                          <label className="block text-xs font-medium text-foreground mb-1">
-                            {i18nService.t('coworkMemoryEmbeddingLocalModelPath')}
-                          </label>
-                          <input
-                            type="text"
-                            value={embeddingLocalModelPath}
-                            onChange={(e) => setEmbeddingLocalModelPath(e.target.value)}
-                            className="w-full rounded-lg border px-3 py-2 text-sm border-border bg-surface font-mono"
-                          />
-                          <div className="text-xs text-secondary mt-1">
-                            {i18nService.t('coworkMemoryEmbeddingLocalModelPathHint')}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Vector weight slider */}
-                      <div>
-                        <label className="block text-xs font-medium text-foreground mb-1">
-                          {i18nService.t('coworkMemoryEmbeddingWeight')}: {embeddingVectorWeight.toFixed(2)}
-                        </label>
-                        <input
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.01"
-                          value={embeddingVectorWeight}
-                          onChange={(e) => setEmbeddingVectorWeight(Number(e.target.value))}
-                          className="w-full"
-                        />
-                        <div className="text-xs text-secondary mt-1">
-                          {i18nService.t('coworkMemoryEmbeddingWeightHint')}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            <EmbeddingSettingsSection
+              embeddingEnabled={embeddingEnabled}
+              embeddingProvider={embeddingProvider}
+              embeddingModel={embeddingModel}
+              embeddingLocalModelPath={embeddingLocalModelPath}
+              embeddingVectorWeight={embeddingVectorWeight}
+              embeddingRemoteBaseUrl={embeddingRemoteBaseUrl}
+              embeddingRemoteApiKey={embeddingRemoteApiKey}
+              onEmbeddingEnabledChange={setEmbeddingEnabled}
+              onEmbeddingProviderChange={setEmbeddingProvider}
+              onEmbeddingModelChange={setEmbeddingModel}
+              onEmbeddingLocalModelPathChange={setEmbeddingLocalModelPath}
+              onEmbeddingVectorWeightChange={setEmbeddingVectorWeight}
+              onEmbeddingRemoteBaseUrlChange={setEmbeddingRemoteBaseUrl}
+              onEmbeddingRemoteApiKeyChange={setEmbeddingRemoteApiKey}
+            />
 
           </div>
         );
