@@ -2410,7 +2410,7 @@ if (!gotTheLock) {
       // The startup sync runs before this IPC call, so the cache was empty then.
       // restartGatewayIfRunning:true ensures the gateway restarts only when the config
       // actually changed; the deferred-restart mechanism keeps active sessions safe.
-      syncOpenClawConfig({ reason: 'server-models-updated', restartGatewayIfRunning: true }).catch(() => {});
+      syncOpenClawConfig({ reason: 'server-models-updated', restartGatewayIfRunning: false }).catch(() => {});
       return { success: true, models: data.data };
     } catch (e) {
       console.error('[Auth:getModels] Error:', e);
