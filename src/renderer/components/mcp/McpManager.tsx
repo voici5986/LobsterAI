@@ -1,6 +1,8 @@
 import React, { useCallback,useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
+import { XCircleIcon as XCircleIconSolid } from '@heroicons/react/20/solid';
+
 import { mcpCategories,mcpRegistry } from '../../data/mcpRegistry';
 import { i18nService } from '../../services/i18n';
 import { mcpService } from '../../services/mcp';
@@ -179,7 +181,7 @@ const McpManager: React.FC = () => {
   }, [getRegistryEntryDescription, getRegistryEntryForServer]);
 
   const filteredInstalled = useMemo(() => {
-    const query = searchQuery.toLowerCase();
+    const query = searchQuery.trim().replace(/\s+/g, ' ').toLowerCase();
     if (!query) return servers;
     return servers.filter(server =>
       server.name.toLowerCase().includes(query)
@@ -189,7 +191,7 @@ const McpManager: React.FC = () => {
 
   const filteredCustom = useMemo(() => {
     const custom = servers.filter(s => !s.isBuiltIn);
-    const query = searchQuery.toLowerCase();
+    const query = searchQuery.trim().replace(/\s+/g, ' ').toLowerCase();
     if (!query) return custom;
     return custom.filter(s =>
       s.name.toLowerCase().includes(query)
@@ -198,7 +200,7 @@ const McpManager: React.FC = () => {
   }, [servers, searchQuery]);
 
   const filteredMarketplace = useMemo(() => {
-    const query = searchQuery.toLowerCase();
+    const query = searchQuery.trim().replace(/\s+/g, ' ').toLowerCase();
     let entries = [...dynamicRegistry];
     if (query) {
       entries = entries.filter(e =>
@@ -418,8 +420,17 @@ const McpManager: React.FC = () => {
               placeholder={i18nService.t('searchMcpServers')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm rounded-xl bg-surface text-foreground placeholder-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full pl-9 pr-8 py-2 text-sm rounded-xl bg-surface text-foreground placeholder-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-secondary hover:text-primary transition-colors"
+              >
+                <XCircleIconSolid className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </div>
 
