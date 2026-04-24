@@ -1428,7 +1428,6 @@ export class OpenClawConfigSync {
     // Sync DingTalk OpenClaw channel config (via dingtalk-connector plugin) — multi-instance via accounts
     const enabledDingTalkInstances = dingTalkInstances.filter(i => i.enabled && i.clientId);
     if (enabledDingTalkInstances.length > 0) {
-      const gatewayToken = this.engineManager.getGatewayToken();
       const buildDingTalkAccountConfig = (
         inst: (typeof enabledDingTalkInstances)[0],
         secretEnvVar: string,

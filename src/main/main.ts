@@ -22,7 +22,7 @@ import {
   rejectPairingRequest,
 } from './im/imPairingStore';
 import { pollNimQrLogin, startNimQrLogin } from './im/nimQrLoginService';
-import type { DingTalkInstanceConfig, EmailMultiInstanceConfig, FeishuInstanceConfig, NimInstanceConfig, Platform, QQInstanceConfig, WecomInstanceConfig } from './im/types';
+import type { DingTalkInstanceConfig, DiscordInstanceConfig, EmailMultiInstanceConfig, FeishuInstanceConfig, NimInstanceConfig, Platform, QQInstanceConfig, TelegramInstanceConfig, WecomInstanceConfig } from './im/types';
 import { registerNimQrLoginHandlers } from './ipcHandlers/nimQrLogin';
 import {
   getCronJobService,
@@ -4002,7 +4002,8 @@ if (!gotTheLock) {
 
       if (instance.transport === 'imap') {
         // Test IMAP connection using node-imap
-        let Imap: any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic require with no type definitions
+        let Imap: new (config: Record<string, unknown>) => any;
         try {
           Imap = require('imap');
         } catch {
@@ -4439,7 +4440,7 @@ if (!gotTheLock) {
     }
   });
 
-  ipcMain.handle('im:telegram:instance:config:set', async (_event, instanceId: string, config: any, options?: { syncGateway?: boolean }) => {
+  ipcMain.handle('im:telegram:instance:config:set', async (_event, instanceId: string, config: Partial<TelegramInstanceConfig>, options?: { syncGateway?: boolean }) => {
     try {
       getIMGatewayManager().getIMStore().setTelegramInstanceConfig(instanceId, config);
       if (options?.syncGateway && getOpenClawEngineManager().getStatus().phase === 'running') {
@@ -4489,7 +4490,7 @@ if (!gotTheLock) {
     }
   });
 
-  ipcMain.handle('im:discord:instance:config:set', async (_event, instanceId: string, config: any, options?: { syncGateway?: boolean }) => {
+  ipcMain.handle('im:discord:instance:config:set', async (_event, instanceId: string, config: Partial<DiscordInstanceConfig>, options?: { syncGateway?: boolean }) => {
     try {
       getIMGatewayManager().getIMStore().setDiscordInstanceConfig(instanceId, config);
       if (options?.syncGateway && getOpenClawEngineManager().getStatus().phase === 'running') {

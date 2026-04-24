@@ -262,42 +262,6 @@ function choosePreferredMemoryText(currentText: string, incomingText: string): s
   return normalizedIncoming.length >= normalizedCurrent.length ? normalizedIncoming : normalizedCurrent;
 }
 
-function isMeaningfulDeleteFragment(value: string): boolean {
-  if (!value) return false;
-  const tokens = value.split(/\s+/g).filter(Boolean);
-  if (tokens.length >= 2) return true;
-  if (/[\u3400-\u9fff]/u.test(value)) return value.length >= 4;
-  return value.length >= 6;
-}
-
-function includesAsBoundedPhrase(target: string, fragment: string): boolean {
-  if (!target || !fragment) return false;
-  const paddedTarget = ` ${target} `;
-  const paddedFragment = ` ${fragment} `;
-  if (paddedTarget.includes(paddedFragment)) {
-    return true;
-  }
-  // CJK phrases are often unsegmented, so token boundaries are unreliable.
-  if (/[\u3400-\u9fff]/u.test(fragment) && !fragment.includes(' ')) {
-    return target.includes(fragment);
-  }
-  return false;
-}
-
-function scoreDeleteMatch(targetKey: string, queryKey: string): number {
-  if (!targetKey || !queryKey) return 0;
-  if (targetKey === queryKey) {
-    return 1000 + queryKey.length;
-  }
-  if (!isMeaningfulDeleteFragment(queryKey)) {
-    return 0;
-  }
-  if (!includesAsBoundedPhrase(targetKey, queryKey)) {
-    return 0;
-  }
-  return 100 + Math.min(targetKey.length, queryKey.length);
-}
-
 function buildMemoryFingerprint(text: string): string {
   const key = normalizeMemoryMatchKey(text);
   return crypto.createHash('sha1').update(key).digest('hex');
