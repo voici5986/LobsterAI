@@ -19,6 +19,16 @@
 const fs = require('fs');
 const path = require('path');
 
+// Heartbeat: prove the script was actually invoked as Node.js (not Electron GUI)
+try {
+  const heartbeat = `${new Date().toISOString()} [unpack-cfmind] phase=script-started pid=${process.pid} node=${process.version} electron_run_as_node=${process.env.ELECTRON_RUN_AS_NODE || 'NOT_SET'}`;
+  console.log(heartbeat);
+  if (process.argv[4]) {
+    fs.mkdirSync(path.dirname(process.argv[4]), { recursive: true });
+    fs.appendFileSync(process.argv[4], heartbeat + '\n');
+  }
+} catch {}
+
 // ============================================================
 // 参数解析
 // ============================================================
@@ -121,6 +131,17 @@ function loadTarModule() {
 // ============================================================
 // 执行解压
 // ============================================================
+
+process.on('uncaughtException', (err) => {
+  logLine(`[unpack-cfmind] phase=uncaught-exception error=${stringifyError(err)}`);
+  closeLogFile();
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  logLine(`[unpack-cfmind] phase=unhandled-rejection error=${stringifyError(reason)}`);
+  closeLogFile();
+  process.exit(1);
+});
 
 try {
   logLine(`[unpack-cfmind] phase=extract-open tar=${tarPath}`);
