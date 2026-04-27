@@ -198,6 +198,7 @@ export interface CoworkStartOptions {
   title?: string;
   activeSkillIds?: string[];
   agentId?: string;
+  modelOverride?: string;
   imageAttachments?: CoworkImageAttachment[];
 }
 

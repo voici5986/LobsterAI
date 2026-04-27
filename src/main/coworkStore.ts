@@ -547,7 +547,8 @@ export class CoworkStore {
     systemPrompt: string = '',
     executionMode: CoworkExecutionMode = 'local',
     activeSkillIds: string[] = [],
-    agentId: string = 'main'
+    agentId: string = 'main',
+    modelOverride: string = ''
   ): CoworkSession {
     const id = uuidv4();
     const now = Date.now();
@@ -556,7 +557,7 @@ export class CoworkStore {
       .prepare(
         `
       INSERT INTO cowork_sessions (id, title, claude_session_id, status, cwd, system_prompt, model_override, execution_mode, active_skill_ids, agent_id, pinned, created_at, updated_at)
-      VALUES (?, ?, NULL, 'idle', ?, ?, '', ?, ?, ?, 0, ?, ?)
+      VALUES (?, ?, NULL, 'idle', ?, ?, ?, ?, ?, ?, 0, ?, ?)
     `,
       )
       .run(
@@ -564,6 +565,7 @@ export class CoworkStore {
         title,
         cwd,
         systemPrompt,
+        modelOverride,
         executionMode,
         JSON.stringify(activeSkillIds),
         agentId,
@@ -579,7 +581,7 @@ export class CoworkStore {
       pinned: false,
       cwd,
       systemPrompt,
-      modelOverride: '',
+      modelOverride,
       executionMode,
       activeSkillIds,
       agentId,
