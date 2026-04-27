@@ -77,6 +77,7 @@ import {
 } from './libs/openclawMemoryFile';
 import { startOpenClawTokenProxy, stopOpenClawTokenProxy } from './libs/openclawTokenProxy';
 import { ensurePythonRuntimeReady } from './libs/pythonRuntime';
+import { serializeForLog } from './libs/sanitizeForLog';
 import { SqliteBackupManager } from './libs/sqliteBackup/sqliteBackupManager';
 import {
   applySystemProxyEnv,
@@ -4971,7 +4972,7 @@ if (!gotTheLock) {
     headers: Record<string, string>;
     body?: string;
   }) => {
-    console.log(`[api:fetch] ${options.method} ${options.url}, headers: ${JSON.stringify(options.headers)}, body: ${options.body}`);
+    console.log(`[api:fetch] ${options.method} ${options.url}, headers: ${serializeForLog(options.headers)}, body: ${options.body}`);
 
     const doFetch = async (headers: Record<string, string>) => {
       const response = await session.defaultSession.fetch(options.url, {

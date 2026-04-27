@@ -2171,7 +2171,7 @@ export class OpenClawConfigSync {
     const D = gwDiagTs;
     const keysSummary = Object.keys(env).sort().map(k => {
       const v = env[k];
-      return `${k}=${v.length > 16 ? v.slice(0, 12) + '…(' + v.length + ')' : v}`;
+      return `${k}=${v.length > 6 ? v.slice(0, 3) + '***' + v.slice(-2) : '***'}`;
     });
     console.log(`${D()} collectSecretEnvVars: ${Object.keys(env).length} keys: ${keysSummary.join(', ')}`);
 
