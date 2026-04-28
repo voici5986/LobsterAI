@@ -96,10 +96,10 @@ Stored app_config.providers.custom_0.models
 auth:getModels
   → GET /api/models/available
   → updateServerModelMetadata(all server models)
-  → syncOpenClawConfig({ reason: 'server-models-updated', restartGatewayIfRunning: true })
+  → syncOpenClawConfig({ reason: 'server-models-updated', restartGatewayIfRunning: false })
   → openclawConfigSync merges all server models into lobsterai-server provider
   → qwen3.6-plus-YoudaoInner writes input: ['text', 'image']
-  → gateway restarts if config changed and safe to restart
+  → running gateway receives config by hot reload; no hard restart on model refresh
 ```
 
 ---
@@ -208,7 +208,7 @@ promptImages=0
 
 1. `tryLobsteraiServerFallback()` 使用缓存的服务端全量模型构造 fallback provider
 2. `openclawConfigSync` 对 `lobsterai-server.models` 做 upsert，而不是 `if exists then skip`
-3. `auth:getModels` 更新模型能力后使用 `restartGatewayIfRunning:true`
+3. `auth:getModels` 更新模型能力后只触发热更新，不因为服务端模型列表变化硬重启 gateway
 
 ### 问题 2：qwen provider 中 qwen3.6-plus 被保存成非视觉模型
 
@@ -284,7 +284,7 @@ custom_0: {
 | `src/main/libs/claudeSettings.ts` | 主进程读取 app_config 时修正 provider 模型能力；server fallback 暴露全量模型 |
 | `src/main/libs/openclawConfigSync.ts` | OpenClaw provider model upsert；写 `models[].input` 前最终修正能力 |
 | `src/main/libs/openclawConfigSync.runtime.test.ts` | 回归测试 qwen、custom、lobsterai-server 的视觉能力配置 |
-| `src/main/main.ts` | `auth:getModels` 后允许必要的 gateway restart |
+| `src/main/main.ts` | `auth:getModels` 后同步模型能力，但不强制 gateway restart |
 | `src/renderer/services/config.ts` | 加载和迁移本地 provider config 时修正模型能力 |
 | `src/renderer/components/Settings.tsx` | 设置页新增/编辑/导入/导出模型时修正模型能力 |
 
@@ -336,7 +336,7 @@ provider=lobsterai-server/qwen3.6-plus-YoudaoInner promptImages=1
 | `custom_0/unknown-model` 本地配置为 `supportsImage:true` | OpenClaw 写出 `input: ['text', 'image']` |
 | `custom_0/unknown-model` 本地配置为 `supportsImage:false` | OpenClaw 写出 `input: ['text']` |
 | `lobsterai-server` 服务端返回多个模型 | OpenClaw provider 包含全部服务端模型 |
-| `auth:getModels` 更新了模型能力 | gateway 在配置变化时重启或延迟重启 |
+| `auth:getModels` 更新了模型能力 | OpenClaw 配置更新，gateway 不因模型列表刷新硬重启 |
 
 ---
 
@@ -346,7 +346,7 @@ provider=lobsterai-server/qwen3.6-plus-YoudaoInner promptImages=1
 2. 对未知模型，系统不会猜测能力，仍尊重用户配置。
 3. 如果真实模型能力与同名内置模型不同，例如某个自定义 endpoint 用同名模型但禁用了视觉能力，当前策略会按已知模型能力修正为支持图片。
 4. `auth:getModels` 失败时，`lobsterai-server` 只能使用已有缓存或当前模型兜底，无法自动发现新服务端模型。
-5. OpenClaw gateway 是否能热加载模型能力不作为前提，模型列表或 `input` 变化后允许硬重启。
+5. `auth:getModels` 可能在普通对话完成后被调用用于刷新额度和模型状态，因此不能把模型列表变化当作硬重启信号。
 
 ---
 

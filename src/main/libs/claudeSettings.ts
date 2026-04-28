@@ -31,6 +31,12 @@ type AppConfig = {
 
 type ProviderModelConfig = {
   id: string;
+  name: string;
+  supportsImage?: boolean;
+};
+
+type ProviderModelInputConfig = {
+  id: string;
   name?: string;
   supportsImage?: boolean;
 };
@@ -106,11 +112,12 @@ function buildServerFallbackModels(effectiveModelId: string): NonNullable<LocalP
   return models;
 }
 
-function normalizeProviderModels(providerName: string, models?: ProviderModelConfig[]): ProviderModelConfig[] {
+function normalizeProviderModels(providerName: string, models?: ProviderModelInputConfig[]): ProviderModelConfig[] {
   return (models ?? [])
     .filter(model => model.id?.trim())
     .map(model => ({
       ...model,
+      name: model.name || model.id,
       supportsImage: ProviderRegistry.resolveModelSupportsImage(
         providerName,
         model.id,
@@ -544,7 +551,7 @@ export type ProviderRawConfig = {
   apiType: 'anthropic' | 'openai';
   authType?: ProviderConfig['authType'];
   codingPlanEnabled: boolean;
-  models: Array<{ id: string; name?: string; supportsImage?: boolean }>;
+  models: ProviderModelConfig[];
 };
 
 export function resolveAllEnabledProviderConfigs(): ProviderRawConfig[] {

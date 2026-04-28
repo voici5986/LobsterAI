@@ -9,6 +9,7 @@ import { buildScheduledTaskEnginePrompt } from '../scheduledTask/enginePrompt';
 import { migrateScheduledTaskRunsToOpenclaw, migrateScheduledTasksToOpenclaw } from '../scheduledTask/migrate';
 import { AppUpdateIpc } from '../shared/appUpdate/constants';
 import { PlatformRegistry } from '../shared/platform';
+import { ProviderName } from '../shared/providers';
 import { AgentManager } from './agentManager';
 import { APP_NAME } from './appConstants';
 import { getAutoLaunchEnabled, isAutoLaunched, setAutoLaunchEnabled } from './autoLaunchManager';
@@ -37,7 +38,7 @@ import {
   type PermissionResult,
 } from './libs/agentEngine';
 import { AppUpdateCoordinator } from './libs/appUpdateCoordinator';
-import { clearServerModelMetadata, getCurrentApiConfig, resolveAllEnabledProviderConfigs, resolveCurrentApiConfig, resolveRawApiConfig, setAuthTokensGetter, setServerBaseUrlGetter, setStoreGetter, updateServerModelMetadata } from './libs/claudeSettings';
+import { clearServerModelMetadata, getAllServerModelMetadata, getCurrentApiConfig, resolveAllEnabledProviderConfigs, resolveCurrentApiConfig, resolveRawApiConfig, setAuthTokensGetter, setServerBaseUrlGetter, setStoreGetter, updateServerModelMetadata } from './libs/claudeSettings';
 import {
   clearCopilotTokenState,
   initCopilotTokenManager,
@@ -53,7 +54,7 @@ import { mergeEnterpriseOpenclawConfig, resolveEnterpriseConfigPath, syncEnterpr
 import { exportLogsZip } from './libs/logExport';
 import { McpBridgeServer } from './libs/mcpBridgeServer';
 import { McpServerManager } from './libs/mcpServerManager';
-import { resolveQualifiedAgentModelRef } from './libs/openclawAgentModels';
+import { parsePrimaryModelRef, resolveQualifiedAgentModelRef } from './libs/openclawAgentModels';
 import {
   buildManagedSessionKey,
   DEFAULT_MANAGED_AGENT_ID,
@@ -1007,6 +1008,34 @@ const getAgentManager = () => {
   return agentManager;
 };
 
+const isLobsteraiServerModelRef = (modelRef: string): boolean => {
+  const normalized = modelRef.trim();
+  if (!normalized) return false;
+
+  const parsed = parsePrimaryModelRef(normalized);
+  if (parsed) {
+    return parsed.providerId === ProviderName.LobsteraiServer;
+  }
+
+  return getAllServerModelMetadata().some((model) => model.modelId === normalized);
+};
+
+const shouldRefreshServerQuotaForSession = (sessionId: string): boolean => {
+  const session = getCoworkStore().getSession(sessionId);
+  const sessionModelRef = session?.modelOverride?.trim();
+  if (sessionModelRef) {
+    return isLobsteraiServerModelRef(sessionModelRef);
+  }
+
+  const agentModelRef = session?.agentId ? getAgentManager().getAgent(session.agentId)?.model?.trim() : '';
+  if (agentModelRef) {
+    return isLobsteraiServerModelRef(agentModelRef);
+  }
+
+  const apiConfig = resolveCurrentApiConfig();
+  return apiConfig.providerMetadata?.providerName === ProviderName.LobsteraiServer;
+};
+
 const resolveCoworkAgentEngine = (): CoworkAgentEngine => {
   return getCoworkStore().getConfig().agentEngine;
 };
@@ -1346,10 +1375,9 @@ const bindCoworkRuntimeForwarder = (): void => {
       if (win.isDestroyed()) return;
       win.webContents.send('cowork:stream:complete', { sessionId, claudeSessionId });
     });
-    // If session used a server model, notify renderer to refresh quota
+    // If this session used a server model, notify renderer to refresh quota.
     try {
-      const apiConfig = resolveCurrentApiConfig();
-      if (apiConfig.providerMetadata?.providerName === 'lobsterai-server') {
+      if (shouldRefreshServerQuotaForSession(sessionId)) {
         const windows = BrowserWindow.getAllWindows();
         windows.forEach((win) => {
           if (win.isDestroyed()) return;
@@ -2442,10 +2470,9 @@ if (!gotTheLock) {
       // Cache server model metadata for use in OpenClaw config sync (supportsImage, etc.)
       updateServerModelMetadata(data.data);
       // Re-sync so the gateway picks up the correct supportsImage values for server models.
-      // The startup sync runs before this IPC call, so the cache was empty then.
-      // restartGatewayIfRunning:true ensures the gateway restarts only when the config
-      // actually changed; the deferred-restart mechanism keeps active sessions safe.
-      syncOpenClawConfig({ reason: 'server-models-updated', restartGatewayIfRunning: true }).catch(() => {});
+      // This IPC can run after normal chat completion when the renderer refreshes quota/model
+      // state, so server model updates must not force a hard gateway restart.
+      syncOpenClawConfig({ reason: 'server-models-updated', restartGatewayIfRunning: false }).catch(() => {});
       return { success: true, models: data.data };
     } catch (e) {
       console.error('[Auth:getModels] Error:', e);
