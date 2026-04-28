@@ -1198,6 +1198,7 @@ export const UserMessageItem: React.FC<{
                   <MarkdownContent
                     content={displayContent}
                     className="max-w-none whitespace-pre-wrap break-words"
+                    onImageClick={setExpandedImage}
                   />
                 )}
                 {imageAttachments.length > 0 && (
@@ -1282,6 +1283,7 @@ const AssistantMessageItem: React.FC<{
   showCopyButton = false,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
+  const [expandedImage, setExpandedImage] = useState<string | null>(null);
   const displayContent = mapDisplayText ? mapDisplayText(message.content) : message.content;
 
   return (
@@ -1296,6 +1298,7 @@ const AssistantMessageItem: React.FC<{
           className="prose dark:prose-invert max-w-none"
           resolveLocalFilePath={resolveLocalFilePath}
           showRevealInFolderAction
+          onImageClick={setExpandedImage}
         />
       </div>
       {showCopyButton && (
@@ -1303,6 +1306,19 @@ const AssistantMessageItem: React.FC<{
           <CopyButton
             content={displayContent}
             visible={isHovered}
+          />
+        </div>
+      )}
+      {expandedImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 cursor-pointer"
+          onClick={() => setExpandedImage(null)}
+        >
+          <img
+            src={expandedImage}
+            alt="Preview"
+            className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
           />
         </div>
       )}
