@@ -622,7 +622,7 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
   const minimaxIsOAuthMode = providers.minimax.authType !== 'apikey';
   // OpenAI defaults to API key mode unless the user explicitly opts in to OAuth
   const openaiIsOAuthMode = providers.openai.authType === 'oauth';
-  const isBaseUrlLocked = (activeProvider === 'zhipu' && providers.zhipu.codingPlanEnabled) || (activeProvider === 'qwen' && providers.qwen.codingPlanEnabled) || (activeProvider === 'volcengine' && providers.volcengine.codingPlanEnabled) || (activeProvider === 'moonshot' && providers.moonshot.codingPlanEnabled) || (activeProvider === 'qianfan' && providers.qianfan.codingPlanEnabled) || (activeProvider === 'minimax' && minimaxIsOAuthMode) || (activeProvider === 'openai' && openaiIsOAuthMode);
+  const isBaseUrlLocked = (activeProvider === 'zhipu' && providers.zhipu.codingPlanEnabled) || (activeProvider === 'qwen' && providers.qwen.codingPlanEnabled) || (activeProvider === 'volcengine' && providers.volcengine.codingPlanEnabled) || (activeProvider === 'moonshot' && providers.moonshot.codingPlanEnabled) || (activeProvider === 'qianfan' && providers.qianfan.codingPlanEnabled) || (activeProvider === 'xiaomi' && providers.xiaomi.codingPlanEnabled) || (activeProvider === 'minimax' && minimaxIsOAuthMode) || (activeProvider === 'openai' && openaiIsOAuthMode);
 
   // 创建引用来确保内容区域的滚动
   const contentRef = useRef<HTMLDivElement>(null);
@@ -4092,6 +4092,14 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
                     </p>
                   </div>
                 )}
+                {/* Xiaomi Coding Plan 提示 */}
+                {activeProvider === 'xiaomi' && providers.xiaomi.codingPlanEnabled && (
+                  <div className="mt-1.5 p-2 rounded-lg bg-primary-muted border border-primary-muted">
+                    <p className="text-[11px] text-primary dark:text-primary">
+                      <span className="font-medium">Coding Plan:</span> {i18nService.t('xiaomiCodingPlanEndpointHint')}
+                    </p>
+                  </div>
+                )}
               </div>
               )}
 
@@ -4268,6 +4276,34 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
                       type="checkbox"
                       checked={providers.qianfan.codingPlanEnabled ?? false}
                       onChange={(e) => handleProviderConfigChange('qianfan', 'codingPlanEnabled', e.target.checked ? 'true' : 'false')}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+              )}
+
+              {/* Xiaomi Coding Plan 开关 (仅 Xiaomi) */}
+              {activeProvider === 'xiaomi' && (
+                <div className="flex items-center justify-between p-3 rounded-xl bg-surface border border-border">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs font-medium text-foreground">
+                        Coding Plan
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-primary-muted text-primary">
+                        Beta
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-secondary">
+                      {i18nService.t('xiaomiCodingPlanHint')}
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer ml-3">
+                    <input
+                      type="checkbox"
+                      checked={providers.xiaomi.codingPlanEnabled ?? false}
+                      onChange={(e) => handleProviderConfigChange('xiaomi', 'codingPlanEnabled', e.target.checked ? 'true' : 'false')}
                       className="sr-only peer"
                     />
                     <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-primary"></div>

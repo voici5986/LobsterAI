@@ -135,6 +135,8 @@ const translations: Record<LanguageType, Record<string, string>> = {
     moonshotCodingPlanEndpointHint: '使用 Coding Plan 时，系统将自动切换到 Coding 专属端点',
     qianfanCodingPlanHint: '启用后使用百度千帆 Coding Plan 专属 API 端点',
     qianfanCodingPlanEndpointHint: '使用 Coding Plan 时，系统将自动切换到 Coding 专属端点',
+    xiaomiCodingPlanHint: '启用后使用小米 Coding Plan 专属 API 端点',
+    xiaomiCodingPlanEndpointHint: '使用 Coding Plan 时，系统将自动切换到 Coding 专属端点',
     minimaxOAuthTabApiKey: 'API Key',
     minimaxAuthApiKeyDesc: '使用 API 密钥直接调用',
     minimaxOAuthTabOAuth: 'OAuth',
@@ -1674,6 +1676,10 @@ const translations: Record<LanguageType, Record<string, string>> = {
     qianfanCodingPlanHint:
       'When enabled, uses the Baidu Qianfan Coding Plan dedicated API endpoint',
     qianfanCodingPlanEndpointHint:
+      'When using Coding Plan, the system will automatically switch to the dedicated Coding endpoint',
+    xiaomiCodingPlanHint:
+      'When enabled, uses the Xiaomi Coding Plan dedicated API endpoint',
+    xiaomiCodingPlanEndpointHint:
       'When using Coding Plan, the system will automatically switch to the dedicated Coding endpoint',
     minimaxOAuthTabApiKey: 'API Key',
     minimaxAuthApiKeyDesc: 'Call directly using an API key',

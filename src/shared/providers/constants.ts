@@ -390,14 +390,23 @@ const PROVIDER_DEFINITIONS = [
     openClawProviderId: OpenClawProviderId.Xiaomi,
     defaultBaseUrl: 'https://api.xiaomimimo.com/anthropic',
     defaultApiFormat: ApiFormat.Anthropic,
-    codingPlanSupported: false,
+    codingPlanSupported: true,
+    codingPlanUrls: {
+      openai: 'https://token-plan-cn.xiaomimimo.com/v1',
+      anthropic: 'https://token-plan-cn.xiaomimimo.com/anthropic',
+    },
     switchableBaseUrls: {
       anthropic: 'https://api.xiaomimimo.com/anthropic',
       openai: 'https://api.xiaomimimo.com/v1/chat/completions',
     },
     region: 'china',
     enPriority: 0,
-    defaultModels: [{ id: 'mimo-v2-flash', name: 'MiMo V2 Flash', supportsImage: false }],
+    defaultModels: [
+      { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro', supportsImage: false },
+      { id: 'mimo-v2.5', name: 'MiMo V2.5', supportsImage: true },
+      { id: 'mimo-v2-pro', name: 'MiMo V2 Pro', supportsImage: false },
+      { id: 'mimo-v2-flash', name: 'MiMo V2 Flash', supportsImage: false },
+    ],
   },
   {
     id: ProviderName.Ollama,

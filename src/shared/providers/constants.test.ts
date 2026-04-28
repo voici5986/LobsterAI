@@ -36,12 +36,13 @@ describe('ProviderRegistry', () => {
     expect(ProviderRegistry.get(ProviderName.Custom)).toBeUndefined();
   });
 
-  test('supportsCodingPlan is true for moonshot, qwen, zhipu, volcengine, qianfan', () => {
+  test('supportsCodingPlan is true for moonshot, qwen, zhipu, volcengine, qianfan, xiaomi', () => {
     expect(ProviderRegistry.supportsCodingPlan(ProviderName.Moonshot)).toBe(true);
     expect(ProviderRegistry.supportsCodingPlan(ProviderName.Qwen)).toBe(true);
     expect(ProviderRegistry.supportsCodingPlan(ProviderName.Zhipu)).toBe(true);
     expect(ProviderRegistry.supportsCodingPlan(ProviderName.Volcengine)).toBe(true);
     expect(ProviderRegistry.supportsCodingPlan(ProviderName.Qianfan)).toBe(true);
+    expect(ProviderRegistry.supportsCodingPlan(ProviderName.Xiaomi)).toBe(true);
   });
 
   test('supportsCodingPlan is false for others', () => {
@@ -108,6 +109,7 @@ describe('ProviderRegistry', () => {
       expect(ProviderRegistry.getCodingPlanUrl(ProviderName.Qwen, 'anthropic')).toBe('https://coding.dashscope.aliyuncs.com/apps/anthropic');
       expect(ProviderRegistry.getCodingPlanUrl(ProviderName.Zhipu, 'anthropic')).toBe('https://open.bigmodel.cn/api/anthropic');
       expect(ProviderRegistry.getCodingPlanUrl(ProviderName.Volcengine, 'anthropic')).toBe('https://ark.cn-beijing.volces.com/api/coding');
+      expect(ProviderRegistry.getCodingPlanUrl(ProviderName.Xiaomi, 'anthropic')).toBe('https://token-plan-cn.xiaomimimo.com/anthropic');
     });
 
     test('returns openai endpoint for coding-plan-supported providers', () => {
@@ -116,6 +118,7 @@ describe('ProviderRegistry', () => {
       expect(ProviderRegistry.getCodingPlanUrl(ProviderName.Zhipu, 'openai')).toBe('https://open.bigmodel.cn/api/coding/paas/v4');
       expect(ProviderRegistry.getCodingPlanUrl(ProviderName.Volcengine, 'openai')).toBe('https://ark.cn-beijing.volces.com/api/coding/v3');
       expect(ProviderRegistry.getCodingPlanUrl(ProviderName.Qianfan, 'openai')).toBe('https://qianfan.baidubce.com/v2/coding/chat/completions');
+      expect(ProviderRegistry.getCodingPlanUrl(ProviderName.Xiaomi, 'openai')).toBe('https://token-plan-cn.xiaomimimo.com/v1');
     });
 
     test('returns undefined for providers that do not support codingPlan', () => {
