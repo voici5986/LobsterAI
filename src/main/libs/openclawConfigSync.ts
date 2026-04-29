@@ -8,6 +8,7 @@ import {
   OpenClawApi as OpenClawApiConst,
   OpenClawProviderId,
   ProviderName,
+  ProviderRegistry,
 } from '../../shared/providers';
 import type { Agent, CoworkConfig, CoworkExecutionMode } from '../coworkStore';
 import type { DiscordInstanceConfig, IMSettings, TelegramInstanceConfig } from '../im/types';
@@ -25,6 +26,7 @@ import {
   getCoworkOpenAICompatProxyToken,
 } from './coworkOpenAICompatProxy';
 import type { McpToolManifestEntry } from './mcpServerManager';
+import { readOpenAICodexAuthFile } from './openaiCodexAuth';
 import {
   buildAgentEntry,
   buildManagedAgentEntries,
@@ -34,7 +36,16 @@ import {
 } from './openclawAgentModels';
 import { parseChannelSessionKey } from './openclawChannelSessionSync';
 import type { OpenClawEngineManager } from './openclawEngineManager';
-import { findThirdPartyExtensionsDir, hasBundledOpenClawExtension } from './openclawLocalExtensions';
+
+const gwDiagTs = (): string => {
+  const d = new Date();
+  const p = (n: number, w = 2) => String(n).padStart(w, '0');
+  const tz = d.getTimezoneOffset();
+  const sign = tz <= 0 ? '+' : '-';
+  const abs = Math.abs(tz);
+  return `[GW-RESTART-DIAG] ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}${sign}${p(Math.floor(abs / 60))}:${p(abs % 60)}`;
+};
+import { findThirdPartyExtensionsDir, hasBundledOpenClawExtension, resolveOpenClawExtensionPluginId } from './openclawLocalExtensions';
 import { getOpenClawTokenProxyPort } from './openclawTokenProxy';
 import { isSystemProxyEnabled } from './systemProxy';
 
@@ -175,6 +186,8 @@ const MANAGED_OWNER_ALLOW_FROM = [
 ];
 
 const MANAGED_TOOL_DENY = ['web_search'] as const;
+const EMAIL_PLUGIN_ID = 'email';
+const NIM_CHANNEL_PLUGIN_ID = 'nimsuite-openclaw-nim-channel';
 
 const MANAGED_SKILL_ENTRY_OVERRIDES: Record<string, { enabled: boolean }> = {
   // QQ plugin ships a legacy reminder skill that steers the model toward a
@@ -411,6 +424,7 @@ type OpenClawProviderApi =
   | 'anthropic-messages'
   | 'openai-completions'
   | 'openai-responses'
+  | 'openai-codex-responses'
   | 'google-generative-ai';
 
 type OpenClawProviderSelection = {
@@ -421,8 +435,9 @@ type OpenClawProviderSelection = {
   providerConfig: {
     baseUrl: string;
     api: OpenClawProviderApi;
-    apiKey: string;
+    apiKey?: string;
     auth: typeof AuthType[keyof typeof AuthType];
+    headers?: Record<string, string>;
     request?: {
       proxy: {
         mode: 'env-proxy';
@@ -445,6 +460,8 @@ type OpenClawProviderSelection = {
     }>;
   };
 };
+
+const OPENAI_CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex';
 
 const normalizeBaseUrlPath = (rawBaseUrl: string, pathName: string): string => {
   const trimmed = rawBaseUrl.trim();
@@ -495,6 +512,18 @@ const shouldUseEnvProxyForProviderBaseUrl = (rawBaseUrl: string): boolean => (
   isSystemProxyEnabled() && !isLoopbackProviderBaseUrl(rawBaseUrl)
 );
 
+const buildOpenAICodexHeaders = (): Record<string, string> | undefined => {
+  const accountId = readOpenAICodexAuthFile()?.accountId;
+  if (!accountId) {
+    return undefined;
+  }
+  return {
+    'chatgpt-account-id': accountId,
+    originator: 'pi',
+    'OpenAI-Beta': 'responses=experimental',
+  };
+};
+
 const normalizeGeminiBaseUrl = (rawBaseUrl: string): string => {
   return normalizeBaseUrlPath(
     rawBaseUrl.trim() || 'https://generativelanguage.googleapis.com',
@@ -513,7 +542,7 @@ type ProviderDescriptor = {
     baseURL: string;
   }) => OpenClawProviderApi;
   normalizeBaseUrl: (rawBaseUrl: string) => string;
-  resolveApiKey?: (ctx: { apiKey: string; providerName: string }) => string;
+  resolveApiKey?: (ctx: { apiKey: string; providerName: string }) => string | undefined;
   resolveSessionModelId?: (modelId: string) => string;
   /**
    * 动态计算 baseUrl，完全覆盖 normalizeBaseUrl 的结果。
@@ -581,6 +610,13 @@ const PROVIDER_REGISTRY: Record<string, ProviderDescriptor> = {
         ? (OpenClawApiConst.OpenAIResponses as OpenClawProviderApi)
         : (OpenClawApiConst.OpenAICompletions as OpenClawProviderApi),
     normalizeBaseUrl: stripChatCompletionsSuffix,
+  },
+
+  [`${ProviderName.OpenAI}:oauth`]: {
+    providerId: OpenClawProviderId.OpenAICodex,
+    resolveApi: () => OpenClawApiConst.OpenAICodexResponses as OpenClawProviderApi,
+    normalizeBaseUrl: () => OPENAI_CODEX_BASE_URL,
+    resolveApiKey: () => undefined,
   },
 
   [ProviderName.DeepSeek]: {
@@ -670,7 +706,11 @@ const DEFAULT_DESCRIPTOR: ProviderDescriptor = {
 const resolveDescriptor = (
   providerName: string,
   codingPlanEnabled: boolean,
+  authType?: 'apikey' | 'oauth',
 ): ProviderDescriptor => {
+  if (providerName === ProviderName.OpenAI && authType === 'oauth') {
+    return PROVIDER_REGISTRY[`${ProviderName.OpenAI}:oauth`];
+  }
   if (codingPlanEnabled) {
     const compositeKey = `${providerName}:codingPlan`;
     if (compositeKey in PROVIDER_REGISTRY) {
@@ -698,7 +738,7 @@ export const buildProviderSelection = (options: {
   modelName?: string;
 }): OpenClawProviderSelection => {
   const providerName = options.providerName ?? '';
-  const descriptor = resolveDescriptor(providerName, !!options.codingPlanEnabled);
+  const descriptor = resolveDescriptor(providerName, !!options.codingPlanEnabled, options.authType);
 
   let baseUrl =
     descriptor.resolveRuntimeBaseUrl?.() ?? descriptor.normalizeBaseUrl(options.baseURL);
@@ -720,8 +760,16 @@ export const buildProviderSelection = (options: {
     : options.modelId;
 
   const providerModelName = resolveModelDisplayName(sessionModelId, options.modelName);
-  const modelInput: string[] = options.supportsImage ? ['text', 'image'] : ['text'];
-  const auth = options.providerName === ProviderName.Minimax && options.authType === 'oauth'
+  const supportsImage = ProviderRegistry.resolveModelSupportsImage(
+    providerName,
+    options.modelId,
+    options.supportsImage,
+  );
+  const modelInput: string[] = supportsImage ? ['text', 'image'] : ['text'];
+  const auth = (
+    (options.providerName === ProviderName.Minimax || options.providerName === ProviderName.OpenAI)
+    && options.authType === 'oauth'
+  )
     ? AuthType.OAuth
     : AuthType.ApiKey;
 
@@ -732,6 +780,10 @@ export const buildProviderSelection = (options: {
   const request = shouldUseEnvProxyForProviderBaseUrl(baseUrl)
     ? { proxy: { mode: 'env-proxy' as const } }
     : undefined;
+  const headers =
+    descriptor.providerId === OpenClawProviderId.OpenAICodex
+      ? buildOpenAICodexHeaders()
+      : undefined;
 
   return {
     providerId: descriptor.providerId,
@@ -741,8 +793,9 @@ export const buildProviderSelection = (options: {
     providerConfig: {
       baseUrl,
       api,
-      apiKey,
+      ...(apiKey ? { apiKey } : {}),
       auth,
+      ...(headers ? { headers } : {}),
       ...(request ? { request } : {}),
       models: [
         {
@@ -764,6 +817,58 @@ export const buildProviderSelection = (options: {
   };
 };
 
+const buildOpenAICodexSystemProxyModelOverrides = (
+  providers: Record<string, OpenClawProviderSelection['providerConfig']>,
+): Record<string, { params: { transport: 'sse' } }> => {
+  if (!isSystemProxyEnabled()) {
+    return {};
+  }
+
+  const codexProvider = providers[OpenClawProviderId.OpenAICodex];
+  if (!codexProvider) {
+    return {};
+  }
+
+  const overrides: Record<string, { params: { transport: 'sse' } }> = {};
+  for (const model of codexProvider.models) {
+    if (!model.id?.trim()) {
+      continue;
+    }
+    overrides[`${OpenClawProviderId.OpenAICodex}/${model.id.trim()}`] = {
+      params: { transport: 'sse' },
+    };
+  }
+  return overrides;
+};
+
+const buildProviderModelCatalog = (
+  providers: Record<string, OpenClawProviderSelection['providerConfig']>,
+): Record<string, { models: Array<{ id: string }> }> => Object.fromEntries(
+  Object.entries(providers).map(([providerId, providerConfig]) => [
+    providerId,
+    {
+      models: providerConfig.models
+        .map((model) => ({ id: model.id?.trim() ?? '' }))
+        .filter((model) => model.id),
+    },
+  ]),
+);
+
+const upsertProviderModel = (
+  providerConfig: OpenClawProviderSelection['providerConfig'],
+  model: OpenClawProviderSelection['providerConfig']['models'][number],
+): void => {
+  const existingIndex = providerConfig.models.findIndex(existing => existing.id === model.id);
+  if (existingIndex >= 0) {
+    providerConfig.models[existingIndex] = {
+      ...providerConfig.models[existingIndex],
+      ...model,
+    };
+    return;
+  }
+  providerConfig.models.push(model);
+};
+
 const readPreinstalledPluginIds = (): string[] => {
   try {
     const pkgPath = path.join(app.getAppPath(), 'package.json');
@@ -777,6 +882,25 @@ const readPreinstalledPluginIds = (): string[] => {
     return [];
   }
 };
+
+type PreinstalledOpenClawPlugin = {
+  packageId: string;
+  pluginId: string;
+};
+
+const readPreinstalledPlugins = (): PreinstalledOpenClawPlugin[] => (
+  readPreinstalledPluginIds()
+    .map((packageId) => {
+      const pluginId = resolveOpenClawExtensionPluginId(packageId);
+      return pluginId ? { packageId, pluginId } : null;
+    })
+    .filter((plugin): plugin is PreinstalledOpenClawPlugin => plugin !== null)
+);
+
+const pluginMatches = (
+  plugin: PreinstalledOpenClawPlugin,
+  ...ids: string[]
+): boolean => ids.includes(plugin.packageId) || ids.includes(plugin.pluginId);
 
 const isBundledPluginAvailable = (pluginId: string): boolean => {
   return hasBundledOpenClawExtension(pluginId);
@@ -899,6 +1023,35 @@ export class OpenClawConfigSync {
     this.getAgents = deps.getAgents;
   }
 
+  /**
+   * Stamp the `meta` field onto an openclaw config object before writing.
+   *
+   * OpenClaw's config health monitor (`observeConfigSnapshot`) compares every
+   * read against a "last known good" fingerprint.  One of the checks is
+   * `hasConfigMeta` — if the previous good config had `meta` but the current
+   * one doesn't, an anomaly is logged and the file content is persisted as a
+   * `.clobbered.<timestamp>` snapshot.  Because LobsterAI writes openclaw.json
+   * directly (bypassing OpenClaw's own `writeConfigFile` which calls
+   * `stampConfigVersion`), we need to stamp `meta` ourselves.
+   */
+  private stampConfigMeta(config: Record<string, unknown>): Record<string, unknown> {
+    let version: string | null = null;
+    try {
+      version =
+        this.engineManager.getStatus().version ||
+        this.engineManager.getDesiredVersion();
+    } catch {
+      // Engine manager may not be fully initialised (e.g. in tests).
+    }
+    return {
+      ...config,
+      meta: {
+        ...(version ? { lastTouchedVersion: version } : {}),
+        lastTouchedAt: new Date().toISOString(),
+      },
+    };
+  }
+
   private buildSessionConfig(): Record<string, unknown> {
     const policy = this.getOpenClawSessionPolicy?.() ?? {
       keepAlive: OpenClawSessionKeepAlive.ThirtyDays,
@@ -1003,33 +1156,44 @@ export class OpenClawConfigSync {
       }
 
       const proxyPort = getOpenClawTokenProxyPort();
-      if (proxyPort && !allProvidersMap[ProviderName.LobsteraiServer]) {
+      if (proxyPort) {
         const serverModels = getAllServerModelMetadata();
-        const firstServerModelId = serverModels[0]?.modelId || modelId;
-        const firstServerSel = buildProviderSelection({
-          apiKey: 'proxy-managed',
-          baseURL: `http://127.0.0.1:${proxyPort}/v1`,
-          modelId: firstServerModelId,
-          apiType: 'openai',
-          providerName: ProviderName.LobsteraiServer,
-          supportsImage: serverModels[0]?.supportsImage,
-        });
-        const lobsteraiProviderConfig = {
-          ...firstServerSel.providerConfig,
-          models: [] as typeof firstServerSel.providerConfig.models,
-        };
-        for (const sm of serverModels) {
-          lobsteraiProviderConfig.models.push({
-            id: sm.modelId,
-            name: sm.modelId,
-            api: OpenClawApiConst.OpenAICompletions as OpenClawProviderApi,
-            input: sm.supportsImage ? ['text', 'image'] : ['text'],
+        const providerId = OpenClawProviderId.LobsteraiServer;
+
+        if (serverModels.length > 0 || !allProvidersMap[providerId]) {
+          const firstServerModelId = serverModels[0]?.modelId || modelId;
+          const firstServerSel = buildProviderSelection({
+            apiKey: 'proxy-managed',
+            baseURL: `http://127.0.0.1:${proxyPort}/v1`,
+            modelId: firstServerModelId,
+            apiType: 'openai',
+            providerName: ProviderName.LobsteraiServer,
+            supportsImage: serverModels[0]?.supportsImage,
           });
+          const lobsteraiProviderConfig =
+            allProvidersMap[providerId] ?? {
+              ...firstServerSel.providerConfig,
+              models: [] as typeof firstServerSel.providerConfig.models,
+            };
+          allProvidersMap[providerId] = lobsteraiProviderConfig;
+
+          if (serverModels.length === 0) {
+            upsertProviderModel(lobsteraiProviderConfig, firstServerSel.providerConfig.models[0]);
+          } else {
+            for (const sm of serverModels) {
+              const serverSel = buildProviderSelection({
+                apiKey: 'proxy-managed',
+                baseURL: `http://127.0.0.1:${proxyPort}/v1`,
+                modelId: sm.modelId,
+                apiType: 'openai',
+                providerName: ProviderName.LobsteraiServer,
+                supportsImage: sm.supportsImage,
+                modelName: sm.modelId,
+              });
+              upsertProviderModel(lobsteraiProviderConfig, serverSel.providerConfig.models[0]);
+            }
+          }
         }
-        if (lobsteraiProviderConfig.models.length === 0) {
-          lobsteraiProviderConfig.models.push(firstServerSel.providerConfig.models[0]);
-        }
-        allProvidersMap[OpenClawProviderId.LobsteraiServer] = lobsteraiProviderConfig;
       }
     }
 
@@ -1037,17 +1201,21 @@ export class OpenClawConfigSync {
       coworkConfig.executionMode || 'local',
       this.isEnterprise(),
     );
+    const availableProviders = buildProviderModelCatalog(allProvidersMap);
+    const defaultModelOverrides = buildOpenAICodexSystemProxyModelOverrides(allProvidersMap);
     console.log(
       `[OpenClawConfigSync] sandbox mode: ${sandboxMode} (executionMode: ${coworkConfig.executionMode || 'local'}, enterprise: ${this.isEnterprise()})`,
     );
 
     const workspaceDir = (coworkConfig.workingDirectory || '').trim();
 
-    const preinstalledPluginIds = readPreinstalledPluginIds().filter(id =>
-      isBundledPluginAvailable(id),
+    const preinstalledPlugins = readPreinstalledPlugins();
+    const hasPreinstalledPlugin = (...ids: string[]) => (
+      preinstalledPlugins.some((plugin) => pluginMatches(plugin, ...ids))
     );
     const hasMcpBridgePlugin = isBundledPluginAvailable('mcp-bridge');
     const hasAskUserPlugin = isBundledPluginAvailable('ask-user-question');
+    const qwenPortalAuthPluginId = resolveOpenClawExtensionPluginId('qwen-portal-auth');
 
     // Detect if any provider uses Qwen/Aliyun DashScope URLs — OpenClaw auto-injects
     // qwen-portal-auth plugin for these, so we must declare it to prevent config diff loops.
@@ -1073,9 +1241,9 @@ export class OpenClawConfigSync {
       // First run or corrupt file — nothing to preserve.
     }
     const existingPluginEntries = (existingPlugins.entries ?? {}) as Record<string, unknown>;
-    console.log('[GW-RESTART-DIAG] existingGateway keys:', Object.keys(existingGateway).sort().join(',') || '(empty)');
-    console.log('[GW-RESTART-DIAG] existingPlugins keys:', Object.keys(existingPlugins).sort().join(',') || '(empty)');
-    console.log('[GW-RESTART-DIAG] existingPluginEntries keys:', Object.keys(existingPluginEntries).sort().join(',') || '(empty)');
+    console.log(`${gwDiagTs()} existingGateway keys:`, Object.keys(existingGateway).sort().join(',') || '(empty)');
+    console.log(`${gwDiagTs()} existingPlugins keys:`, Object.keys(existingPlugins).sort().join(',') || '(empty)');
+    console.log(`${gwDiagTs()} existingPluginEntries keys:`, Object.keys(existingPluginEntries).sort().join(',') || '(empty)');
 
     const dingTalkInstances = this.getDingTalkInstances();
     // DingTalk runs through OpenClaw plugin but still needs the gateway HTTP endpoint (chatCompletions)
@@ -1088,6 +1256,8 @@ export class OpenClawConfigSync {
     const wecomInstances = this.getWecomInstances();
 
     const popoConfig = this.getPopoConfig();
+
+    const emailConfig = this.getEmailOpenClawConfig?.();
 
     const nimInstances = this.getNimInstances();
 
@@ -1139,6 +1309,7 @@ export class OpenClawConfigSync {
           model: {
             primary: primaryModel,
           },
+          ...(Object.keys(defaultModelOverrides).length > 0 ? { models: defaultModelOverrides } : {}),
           sandbox: {
             mode: sandboxMode,
           },
@@ -1168,7 +1339,7 @@ export class OpenClawConfigSync {
             },
           } : {}),
         },
-        ...this.buildAgentsList(primaryModel, this.engineManager.getStateDir()),
+        ...this.buildAgentsList(primaryModel, this.engineManager.getStateDir(), availableProviders),
       },
       ...this.currentBindingsObj,
       session: this.buildSessionConfig(),
@@ -1203,12 +1374,23 @@ export class OpenClawConfigSync {
         sessionRetention: '7d',
       },
       ...((() => {
-        // Remove known-stale plugin entries that no longer ship with the
-        // runtime.  These ghost entries cause harmless but noisy "plugin
-        // not found" warnings on every gateway startup.
-        const knownStalePluginIds = ['dingtalk', 'openclaw-nim-channel', 'qwen-portal-auth', 'openclaw-qqbot'];
+        // Remove legacy package/directory ids from plugin entries.  OpenClaw
+        // validates entries by the manifest `id`, so aliases like
+        // `clawemail-email` and `openclaw-nim-channel` produce noisy
+        // "plugin not found" warnings even when the package exists.
+        const packageAliasPluginIds = preinstalledPlugins
+          .filter((plugin) => plugin.packageId !== plugin.pluginId)
+          .map((plugin) => plugin.packageId);
+        const knownStalePluginIds = [
+          'dingtalk',
+          'openclaw-nim-channel',
+          'clawemail-email',
+          'qwen-portal-auth',
+          'openclaw-qqbot',
+          ...packageAliasPluginIds,
+        ];
         const transientPluginIds = [
-          ...(preinstalledPluginIds.includes('openclaw-lark') ? ['feishu'] : []),
+          ...(hasPreinstalledPlugin('openclaw-lark') ? ['feishu'] : []),
         ];
         const cleanedExistingEntries = Object.fromEntries(
           Object.entries(existingPluginEntries).filter(([id]) => (
@@ -1225,33 +1407,36 @@ export class OpenClawConfigSync {
           ...cleanedExistingEntries,
           qqbot: { enabled: qqbotPluginEnabled },
           ...Object.fromEntries(
-            preinstalledPluginIds.map(id => {
+            preinstalledPlugins.map(plugin => {
               // Sync plugin enabled state with the corresponding channel config.
               // When a channel is disabled in the UI, its plugin must also be
               // disabled so OpenClaw doesn't load it at all.
               const pluginEnabled = (() => {
-                if (id === DINGTALK_OPENCLAW_CHANNEL || id === 'dingtalk') return dingTalkInstances.some(i => i.enabled && i.clientId);
-                if (id === 'openclaw-lark' || id === 'feishu-openclaw-plugin')
+                if (pluginMatches(plugin, DINGTALK_OPENCLAW_CHANNEL, 'dingtalk')) return dingTalkInstances.some(i => i.enabled && i.clientId);
+                if (pluginMatches(plugin, 'openclaw-lark', 'feishu-openclaw-plugin'))
                   return feishuInstances.some(i => i.enabled && i.appId);
-                if (id === 'openclaw-qqbot') return qqInstances.some(i => i.enabled && i.appId);
-                if (id === 'wecom-openclaw-plugin') return wecomInstances.some(i => i.enabled && i.botId);
-                if (id === 'moltbot-popo') return !!(popoConfig?.enabled && popoConfig.appKey);
-                if (id === 'nim') return nimInstances.some(i => i.enabled && ((i.nimToken && i.nimToken.trim()) || (i.appKey && i.account && i.token)));
-                if (id === 'openclaw-netease-bee') return !!(neteaseBeeChanConfig?.enabled && neteaseBeeChanConfig.clientId && neteaseBeeChanConfig.secret);
-                if (id === 'openclaw-weixin') return true; // Always keep enabled for QR login discovery
+                if (pluginMatches(plugin, 'openclaw-qqbot')) return qqInstances.some(i => i.enabled && i.appId);
+                if (pluginMatches(plugin, 'wecom-openclaw-plugin')) return wecomInstances.some(i => i.enabled && i.botId);
+                if (pluginMatches(plugin, 'moltbot-popo')) return !!(popoConfig?.enabled && popoConfig.appKey);
+                if (pluginMatches(plugin, 'openclaw-nim-channel', NIM_CHANNEL_PLUGIN_ID, 'nim'))
+                  return nimInstances.some(i => i.enabled && ((i.nimToken && i.nimToken.trim()) || (i.appKey && i.account && i.token)));
+                if (pluginMatches(plugin, 'openclaw-netease-bee')) return !!(neteaseBeeChanConfig?.enabled && neteaseBeeChanConfig.clientId && neteaseBeeChanConfig.secret);
+                if (pluginMatches(plugin, 'openclaw-weixin')) return true; // Always keep enabled for QR login discovery
+                if (pluginMatches(plugin, 'clawemail-email', EMAIL_PLUGIN_ID)) return !!emailConfig?.instances.some(i => i.enabled && i.email);
                 return true; // other plugins stay enabled
               })();
-              return [id, { enabled: pluginEnabled }];
+              return [plugin.pluginId, { enabled: pluginEnabled }];
             }),
           ),
-          ...(preinstalledPluginIds.includes('feishu-openclaw-plugin')
+          ...(hasPreinstalledPlugin('feishu-openclaw-plugin')
             ? { feishu: { enabled: false } }
             : {}),
           ...(hasMcpBridgePlugin ? { 'mcp-bridge': { enabled: true } } : {}),
           ...(hasAskUserPlugin ? { 'ask-user-question': { enabled: true } } : {}),
-          // OpenClaw auto-injects qwen-portal-auth for Qwen/DashScope URLs; declare it
-          // explicitly so configSync doesn't remove it and trigger restart loops.
-          ...(hasQwenProvider ? { 'qwen-portal-auth': { enabled: true } } : {}),
+          // Some OpenClaw versions auto-inject qwen-portal-auth for
+          // Qwen/DashScope URLs. Declare it only when the plugin actually
+          // exists, otherwise it becomes a stale entry on every startup.
+          ...(hasQwenProvider && qwenPortalAuthPluginId ? { [qwenPortalAuthPluginId]: { enabled: true } } : {}),
           // Disable acpx (ACP agent runtime) — LobsterAI does not use ACP and
           // the embedded probe adds ~11s to gateway startup while it waits for
           // a process that always fails.  See openclaw/openclaw#62588.
@@ -1644,7 +1829,6 @@ export class OpenClawConfigSync {
     }
 
     // Sync Email OpenClaw channel config (multi-instance)
-    const emailConfig = this.getEmailOpenClawConfig?.();
     if (emailConfig?.instances && emailConfig.instances.length > 0) {
       const enabledInstances = emailConfig.instances.filter(i => i.enabled && i.email);
 
@@ -1759,7 +1943,7 @@ export class OpenClawConfigSync {
     // Sync Weixin OpenClaw channel config (via openclaw-weixin plugin)
     // Only write the channel entry when the plugin is actually installed,
     // otherwise the gateway rejects the config as invalid.
-    if (preinstalledPluginIds.includes('openclaw-weixin')) {
+    if (hasPreinstalledPlugin('openclaw-weixin')) {
       const weixinChannelEnabled = !!weixinConfig?.enabled;
       const weixinChannel: Record<string, unknown> = {
         enabled: weixinChannelEnabled,
@@ -1795,7 +1979,20 @@ export class OpenClawConfigSync {
       currentContent = '';
     }
 
-    const configChanged = currentContent !== nextContent;
+    // Compare ignoring `meta` — it contains timestamps that change on every
+    // write and should not trigger a gateway restart.
+    const configChanged = (() => {
+      if (!currentContent) return true;
+      try {
+        const cur = JSON.parse(currentContent);
+        delete cur.meta;
+        const nxt = JSON.parse(nextContent);
+        delete nxt.meta;
+        return JSON.stringify(cur) !== JSON.stringify(nxt);
+      } catch {
+        return currentContent !== nextContent;
+      }
+    })();
 
     // Detect mcp-bridge config changes (callbackUrl, tools) separately.
     // Even when the overall plugins section appears "UNCHANGED" in the
@@ -1818,7 +2015,7 @@ export class OpenClawConfigSync {
       const nxtToolCount = Array.isArray(nxtTools) ? nxtTools.length : 0;
       mcpBridgeConfigChanged = curCallbackUrl !== nxtCallbackUrl || curToolsJson !== nxtToolsJson;
       if (mcpBridgeConfigChanged) {
-        console.log(`[GW-RESTART-DIAG] mcp-bridge config CHANGED: callbackUrl ${curCallbackUrl ?? 'null'} → ${nxtCallbackUrl ?? 'null'}, tools ${curToolCount} → ${nxtToolCount}`);
+        console.log(`${gwDiagTs()} mcp-bridge config CHANGED: callbackUrl ${curCallbackUrl ?? 'null'} → ${nxtCallbackUrl ?? 'null'}, tools ${curToolCount} → ${nxtToolCount}`);
       }
     } catch { /* ignore parse errors */ }
 
@@ -1832,30 +2029,31 @@ export class OpenClawConfigSync {
         const curPl = JSON.stringify(currentObj.plugins ?? {});
         const nxtPl = JSON.stringify(nextObj.plugins ?? {});
         if (curGw !== nxtGw) {
-          console.log('[GW-RESTART-DIAG] gateway DIFF:');
-          console.log('[GW-RESTART-DIAG]   old gateway keys:', Object.keys(currentObj.gateway ?? {}).sort().join(','));
-          console.log('[GW-RESTART-DIAG]   new gateway keys:', Object.keys(nextObj.gateway ?? {}).sort().join(','));
-          console.log('[GW-RESTART-DIAG]   old gateway:', curGw.slice(0, 500));
-          console.log('[GW-RESTART-DIAG]   new gateway:', nxtGw.slice(0, 500));
+          console.log(`${gwDiagTs()} gateway DIFF:`);
+          console.log(`${gwDiagTs()} old gateway keys:`, Object.keys(currentObj.gateway ?? {}).sort().join(','));
+          console.log(`${gwDiagTs()} new gateway keys:`, Object.keys(nextObj.gateway ?? {}).sort().join(','));
+          console.log(`${gwDiagTs()} old gateway:`, curGw.slice(0, 500));
+          console.log(`${gwDiagTs()} new gateway:`, nxtGw.slice(0, 500));
         } else {
-          console.log('[GW-RESTART-DIAG] gateway section UNCHANGED');
+          console.log(`${gwDiagTs()} gateway section UNCHANGED`);
         }
         if (curPl !== nxtPl) {
-          console.log('[GW-RESTART-DIAG] plugins DIFF:');
-          console.log('[GW-RESTART-DIAG]   old plugin entry keys:', Object.keys((currentObj.plugins?.entries) ?? {}).sort().join(','));
-          console.log('[GW-RESTART-DIAG]   new plugin entry keys:', Object.keys((nextObj.plugins?.entries) ?? {}).sort().join(','));
+          console.log(`${gwDiagTs()} plugins DIFF:`);
+          console.log(`${gwDiagTs()} old plugin entry keys:`, Object.keys((currentObj.plugins?.entries) ?? {}).sort().join(','));
+          console.log(`${gwDiagTs()} new plugin entry keys:`, Object.keys((nextObj.plugins?.entries) ?? {}).sort().join(','));
         } else {
-          console.log('[GW-RESTART-DIAG] plugins section UNCHANGED');
+          console.log(`${gwDiagTs()} plugins section UNCHANGED`);
         }
         // Check which top-level keys actually changed
         const allKeys = new Set([...Object.keys(currentObj), ...Object.keys(nextObj)]);
         const changedKeys = [...allKeys].filter(k => JSON.stringify(currentObj[k]) !== JSON.stringify(nextObj[k]));
-        console.log('[GW-RESTART-DIAG] top-level changed keys:', changedKeys.join(',') || '(none)');
+        console.log(`${gwDiagTs()} top-level changed keys:`, changedKeys.join(',') || '(none)');
       } catch { /* ignore parse errors in diag */ }
       try {
         ensureDir(path.dirname(configPath));
+        const stampedContent = `${JSON.stringify(this.stampConfigMeta(managedConfig), null, 2)}\n`;
         const tmpPath = `${configPath}.tmp-${Date.now()}`;
-        fs.writeFileSync(tmpPath, nextContent, 'utf8');
+        fs.writeFileSync(tmpPath, stampedContent, 'utf8');
         fs.renameSync(tmpPath, configPath);
       } catch (error) {
         return {
@@ -2040,12 +2238,12 @@ export class OpenClawConfigSync {
       env[key] = nimInstances[idx].token;
     }
 
-    const D = '[GW-RESTART-DIAG]';
+    const D = gwDiagTs;
     const keysSummary = Object.keys(env).sort().map(k => {
       const v = env[k];
-      return `${k}=${v.length > 16 ? v.slice(0, 12) + '…(' + v.length + ')' : v}`;
+      return `${k}=${v.length > 6 ? v.slice(0, 3) + '***' + v.slice(-2) : '***'}`;
     });
-    console.log(`${D} collectSecretEnvVars: ${Object.keys(env).length} keys: ${keysSummary.join(', ')}`);
+    console.log(`${D()} collectSecretEnvVars: ${Object.keys(env).length} keys: ${keysSummary.join(', ')}`);
 
     return env;
   }
@@ -2390,13 +2588,17 @@ export class OpenClawConfigSync {
    * Per-agent `identity` (name, emoji) is set from the agent database so
    * OpenClaw picks it up natively.
    */
-  private buildAgentsList(defaultPrimaryModel: string, stateDir?: string): { list?: Array<Record<string, unknown>> } {
+  private buildAgentsList(
+    defaultPrimaryModel: string,
+    stateDir?: string,
+    availableProviders?: Record<string, { models: Array<{ id: string }> }>,
+  ): { list?: Array<Record<string, unknown>> } {
     const agents = this.getAgents?.() ?? [];
     const mainAgent = agents.find(agent => agent.id === 'main');
 
     const list: Array<Record<string, unknown>> = [
       mainAgent
-        ? buildAgentEntry(mainAgent, defaultPrimaryModel)
+        ? buildAgentEntry(mainAgent, defaultPrimaryModel, { availableProviders })
         : {
             id: 'main',
             default: true,
@@ -2408,6 +2610,7 @@ export class OpenClawConfigSync {
         agents,
         fallbackPrimaryModel: defaultPrimaryModel,
         stateDir,
+        availableProviders,
       }),
     ];
 
@@ -2631,14 +2834,28 @@ export class OpenClawConfigSync {
 
     const nextContent = `${JSON.stringify(mergedConfig, null, 2)}\n`;
 
-    if (currentContent === nextContent) {
+    // Compare ignoring `meta` timestamps to avoid unnecessary writes.
+    const unchanged = (() => {
+      if (!currentContent) return false;
+      try {
+        const cur = JSON.parse(currentContent);
+        delete cur.meta;
+        const nxt = JSON.parse(nextContent);
+        delete nxt.meta;
+        return JSON.stringify(cur) === JSON.stringify(nxt);
+      } catch {
+        return currentContent === nextContent;
+      }
+    })();
+    if (unchanged) {
       return { ok: true, changed: false, configPath };
     }
 
     try {
       ensureDir(path.dirname(configPath));
+      const stampedContent = `${JSON.stringify(this.stampConfigMeta(mergedConfig), null, 2)}\n`;
       const tmpPath = `${configPath}.tmp-${Date.now()}`;
-      fs.writeFileSync(tmpPath, nextContent, 'utf8');
+      fs.writeFileSync(tmpPath, stampedContent, 'utf8');
       fs.renameSync(tmpPath, configPath);
       return { ok: true, changed: true, configPath };
     } catch (error) {

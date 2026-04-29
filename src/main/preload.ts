@@ -374,6 +374,8 @@ contextBridge.exposeInMainWorld('electron', {
     getPath: () => ipcRenderer.invoke('log:getPath'),
     openFolder: () => ipcRenderer.invoke('log:openFolder'),
     exportZip: () => ipcRenderer.invoke('log:exportZip'),
+    fromRenderer: (level: string, tag: string, message: string) =>
+      ipcRenderer.send('log:fromRenderer', level, tag, message),
   },
   im: {
     // Configuration
@@ -621,5 +623,19 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('github-copilot:token-updated', handler);
       return () => ipcRenderer.removeListener('github-copilot:token-updated', handler);
     },
+  },
+  openaiCodexOAuth: {
+    start: () =>
+      ipcRenderer.invoke('openai-codex-oauth:start') as Promise<
+        | { success: true; email: string | null; accountId: string | null; expiresAt: number }
+        | { success: false; error: string }
+      >,
+    cancel: () => ipcRenderer.invoke('openai-codex-oauth:cancel') as Promise<void>,
+    logout: () => ipcRenderer.invoke('openai-codex-oauth:logout') as Promise<void>,
+    status: () =>
+      ipcRenderer.invoke('openai-codex-oauth:status') as Promise<
+        | { loggedIn: true; email: string | null; accountId: string | null; expiresAt: number }
+        | { loggedIn: false }
+      >,
   },
 });

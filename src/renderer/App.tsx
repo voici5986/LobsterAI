@@ -9,6 +9,7 @@ import {
   type AppUpdateRuntimeState,
   AppUpdateStatus,
 } from '../shared/appUpdate/constants';
+import { OpenClawProviderId, ProviderName, ProviderRegistry } from '../shared/providers';
 import AgentsView from './components/agent/AgentsView';
 import { CoworkView } from './components/cowork';
 import CoworkPermissionModal from './components/cowork/CoworkPermissionModal';
@@ -41,9 +42,19 @@ import {
   selectFirstPendingPermission,
 } from './store/selectors/coworkSelectors';
 import { setDraftPrompt } from './store/slices/coworkSlice';
-import { setAvailableModels, setSelectedModel } from './store/slices/modelSlice';
+import { setAvailableModels, setDefaultSelectedModel } from './store/slices/modelSlice';
 import { clearSelection } from './store/slices/quickActionSlice';
 import type { CoworkPermissionResult } from './types/cowork';
+
+const getOpenClawProviderIdForConfig = (
+  providerName: string,
+  providerConfig: { authType?: string },
+): string => {
+  if (providerName === ProviderName.OpenAI && providerConfig.authType === 'oauth') {
+    return OpenClawProviderId.OpenAICodex;
+  }
+  return ProviderRegistry.getOpenClawProviderId(providerName);
+};
 
 const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
@@ -75,7 +86,7 @@ const App: React.FC = () => {
   const previousUpdateStatusRef = useRef<AppUpdateRuntimeState['status']>(AppUpdateStatus.Idle);
   const shouldInstallReadyUpdateRef = useRef(false);
   const dispatch = useDispatch();
-  const selectedModel = useSelector((state: RootState) => state.model.selectedModel);
+  const defaultSelectedModel = useSelector((state: RootState) => state.model.defaultSelectedModel);
   const currentSessionId = useSelector(selectCurrentSessionId);
   const pendingPermission = useSelector(selectFirstPendingPermission);
   const authUser = useSelector((state: RootState) => state.auth.user);
@@ -111,32 +122,38 @@ const App: React.FC = () => {
     hasInitialized.current = true;
 
     const initializeApp = async () => {
+      const t0 = performance.now();
+      const mark = (label: string) => {
+        const elapsed = Math.round(performance.now() - t0);
+        const msg = `initializeApp: ${label} (+${elapsed}ms)`;
+        console.info(`[App] ${msg}`);
+        try { window.electron?.log?.fromRenderer?.('info', 'App', msg); } catch { /* preload may not expose this yet */ }
+      };
+
       try {
-        console.info('[App] initializeApp: start');
-        // 标记平台，用于 CSS 条件样式（如 Windows 标题栏按钮区域留白）
+        mark('start');
         document.documentElement.classList.add(`platform-${window.electron.platform}`);
 
-        // 初始化配置
-        console.info('[App] initializeApp: configService.init');
-        await waitWithTimeout(configService.init(), 5000, 'configService.init');
+        const initTimeoutMs = window.electron.platform === 'win32' ? 15_000 : 10_000;
+        mark('configService.init begin');
+        await waitWithTimeout(configService.init(), initTimeoutMs, 'configService.init');
+        mark('configService.init done');
 
-        // Load enterprise config if present
         const entConfig = await window.electron.enterprise.getConfig();
         setEnterpriseConfig(entConfig);
+        mark('enterprise.getConfig done');
 
-        // 初始化主题
-        console.info('[App] initializeApp: themeService.initialize');
         themeService.initialize();
+        mark('themeService done');
 
-        // 初始化语言
-        console.info('[App] initializeApp: i18nService.initialize');
-        await waitWithTimeout(i18nService.initialize(), 5000, 'i18nService.initialize');
+        mark('i18nService.initialize begin');
+        await waitWithTimeout(i18nService.initialize(), initTimeoutMs, 'i18nService.initialize');
+        mark('i18nService.initialize done');
 
-        // 初始化认证服务（恢复登录状态）
-        console.info('[App] initializeApp: authService.init');
+        mark('authService.init begin');
         await authService.init();
+        mark('authService.init done');
 
-        console.info('[App] initializeApp: configService.getConfig');
         const config = await configService.getConfig();
         const apiConfig: ApiConfig = {
           apiKey: config.api.key,
@@ -144,17 +161,18 @@ const App: React.FC = () => {
         };
         apiService.setConfig(apiConfig);
 
-        // 从 providers 配置中加载可用模型列表到 Redux
-        const providerModels: { id: string; name: string; provider?: string; providerKey?: string; supportsImage?: boolean }[] = [];
+        const providerModels: { id: string; name: string; provider?: string; providerKey?: string; openClawProviderId?: string; supportsImage?: boolean }[] = [];
         if (config.providers) {
           Object.entries(config.providers).forEach(([providerName, providerConfig]) => {
             if (providerConfig.enabled && providerConfig.models) {
+              const openClawProviderId = getOpenClawProviderIdForConfig(providerName, providerConfig);
               providerConfig.models.forEach((model: { id: string; name: string; supportsImage?: boolean }) => {
                 providerModels.push({
                   id: model.id,
                   name: model.name,
                   provider: getProviderDisplayName(providerName, providerConfig),
                   providerKey: providerName,
+                  openClawProviderId,
                   supportsImage: model.supportsImage ?? false,
                 });
               });
@@ -170,31 +188,32 @@ const App: React.FC = () => {
         const resolvedModels = providerModels.length > 0 ? providerModels : fallbackModels;
         if (resolvedModels.length > 0) {
           dispatch(setAvailableModels(resolvedModels));
-          // Search all available models (including server models loaded by authService)
-          // so that a previously selected server model is correctly restored.
           const allModels = store.getState().model.availableModels;
           const preferredModel = allModels.find(
             model => model.id === config.model.defaultModel
               && (!config.model.defaultModelProvider || model.providerKey === config.model.defaultModelProvider)
           ) ?? allModels[0];
-          dispatch(setSelectedModel(preferredModel));
+          dispatch(setDefaultSelectedModel(preferredModel));
         }
+        mark('model resolution done');
 
-        // 检查隐私协议是否已同意（必须在 setIsInitialized 之前）
         const agreed = await window.electron.store.get('privacy_agreed');
         setPrivacyAgreed(agreed === true);
+        mark('privacy check done');
 
         setIsInitialized(true);
-        console.info('[App] initializeApp: shell ready');
+        mark('shell ready');
 
-
-        // 初始化定时任务服务，但不阻塞首屏
         void waitWithTimeout(scheduledTaskService.init(), 5000, 'scheduledTaskService.init').catch((error) => {
           console.error('[App] initializeApp: scheduledTaskService.init failed:', error);
         });
 
       } catch (error) {
-        console.error('Failed to initialize app:', error);
+        const elapsed = Math.round(performance.now() - t0);
+        const msg = error instanceof Error ? error.message : String(error);
+        const detail = `initializeApp FAILED after ${elapsed}ms: ${msg}`;
+        console.error(`[App] ${detail}`);
+        try { window.electron?.log?.fromRenderer?.('error', 'App', detail); } catch { /* best-effort */ }
         setInitError(i18nService.t('initializationError'));
         setIsInitialized(true);
       }
@@ -256,22 +275,22 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!isInitialized || !selectedModel?.id) return;
+    if (!isInitialized || !defaultSelectedModel?.id) return;
     const config = configService.getConfig();
     if (
-      config.model.defaultModel === selectedModel.id
-      && (config.model.defaultModelProvider ?? '') === (selectedModel.providerKey ?? '')
+      config.model.defaultModel === defaultSelectedModel.id
+      && (config.model.defaultModelProvider ?? '') === (defaultSelectedModel.providerKey ?? '')
     ) {
       return;
     }
     void configService.updateConfig({
       model: {
         ...config.model,
-        defaultModel: selectedModel.id,
-        defaultModelProvider: selectedModel.providerKey,
+        defaultModel: defaultSelectedModel.id,
+        defaultModelProvider: defaultSelectedModel.providerKey,
       },
     });
-  }, [isInitialized, selectedModel?.id, selectedModel?.providerKey]);
+  }, [isInitialized, defaultSelectedModel?.id, defaultSelectedModel?.providerKey]);
 
   const handleShowSettings = useCallback((options?: SettingsOpenOptions) => {
     setSettingsOptions({
@@ -374,7 +393,7 @@ const App: React.FC = () => {
       mounted = false;
       unsubscribe();
     };
-  }, []);
+  }, [showToast]);
 
   const handleShowLogin = useCallback(() => {
     showToast(i18nService.t('featureInDevelopment'));
@@ -496,15 +515,17 @@ const App: React.FC = () => {
     });
 
     if (config.providers) {
-      const allModels: { id: string; name: string; provider?: string; providerKey?: string; supportsImage?: boolean }[] = [];
+      const allModels: { id: string; name: string; provider?: string; providerKey?: string; openClawProviderId?: string; supportsImage?: boolean }[] = [];
       Object.entries(config.providers).forEach(([providerName, providerConfig]) => {
         if (providerConfig.enabled && providerConfig.models) {
+          const openClawProviderId = getOpenClawProviderIdForConfig(providerName, providerConfig);
           providerConfig.models.forEach((model: { id: string; name: string; supportsImage?: boolean }) => {
             allModels.push({
               id: model.id,
               name: model.name,
               provider: getProviderDisplayName(providerName, providerConfig),
               providerKey: providerName,
+              openClawProviderId,
               supportsImage: model.supportsImage ?? false,
             });
           });

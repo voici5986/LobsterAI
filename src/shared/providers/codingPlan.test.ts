@@ -70,4 +70,26 @@ describe('resolveCodingPlanBaseUrl', () => {
       expect(result.effectiveFormat).toBe('openai');
     });
   });
+
+  describe('Qianfan — preferredCodingPlanFormat=openai', () => {
+    test('returns openai coding plan URL with chat/completions suffix', () => {
+      const result = resolveCodingPlanBaseUrl(ProviderName.Qianfan, true, 'openai', '');
+      expect(result.baseUrl).toBe('https://qianfan.baidubce.com/v2/coding/chat/completions');
+      expect(result.effectiveFormat).toBe('openai');
+    });
+  });
+
+  describe('Xiaomi — no preferredCodingPlanFormat', () => {
+    test('returns anthropic coding plan URL when caller passes anthropic', () => {
+      const result = resolveCodingPlanBaseUrl(ProviderName.Xiaomi, true, 'anthropic', '');
+      expect(result.baseUrl).toBe('https://token-plan-cn.xiaomimimo.com/anthropic');
+      expect(result.effectiveFormat).toBe('anthropic');
+    });
+
+    test('returns openai coding plan URL when caller passes openai', () => {
+      const result = resolveCodingPlanBaseUrl(ProviderName.Xiaomi, true, 'openai', '');
+      expect(result.baseUrl).toBe('https://token-plan-cn.xiaomimimo.com/v1');
+      expect(result.effectiveFormat).toBe('openai');
+    });
+  });
 });

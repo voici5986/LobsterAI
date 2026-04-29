@@ -1,4 +1,8 @@
-import type { Model } from '../../store/slices/modelSlice';
+import { useMemo } from 'react';
+import { useSelector } from 'react-redux';
+
+import type { RootState } from '../../store';
+import { type Model,selectAgentSelectedModel } from '../../store/slices/modelSlice';
 import type { CoworkAgentEngine } from '../../types/cowork';
 import { resolveOpenClawModelRef } from '../../utils/openclawModelRef';
 
@@ -15,6 +19,30 @@ type ResolveAgentModelSelectionResult = {
   usesFallback: boolean;
   hasInvalidExplicitModel: boolean;
 };
+
+/**
+ * Determine which Model object the prompt input should use for capability
+ * checks (e.g. supportsImage).
+ *
+ * On the **home page** (no sessionId) the header ModelSelector writes
+ * directly to globalSelectedModel (Redux), so we must honour that value —
+ * otherwise the agent's default model may shadow the user's choice and
+ * produce a wrong supportsImage flag (see PR #1850 / #1856 regression).
+ *
+ * Inside a **session** (has sessionId) the agent-level resolution
+ * (session override → agent model → fallback) is authoritative.
+ */
+export function resolveEffectiveModel({
+  sessionId,
+  agentSelectedModel,
+  globalSelectedModel,
+}: {
+  sessionId: string | undefined;
+  agentSelectedModel: Model | null;
+  globalSelectedModel: Model | null;
+}): Model | null {
+  return sessionId ? agentSelectedModel : globalSelectedModel;
+}
 
 export function resolveAgentModelSelection({
   sessionModel,
@@ -39,8 +67,22 @@ export function resolveAgentModelSelection({
       return { selectedModel: explicitModel, usesFallback: false, hasInvalidExplicitModel: false };
     }
 
-    return { selectedModel: fallbackModel, usesFallback: true, hasInvalidExplicitModel: true };
+    return { selectedModel: fallbackModel, usesFallback: true, hasInvalidExplicitModel: false };
   }
 
   return { selectedModel: fallbackModel, usesFallback: true, hasInvalidExplicitModel: false };
+}
+
+/**
+ * Hook: resolve the effective selected model for a given agent.
+ *
+ * Shared by CoworkView (header) and CoworkPromptInput (prompt area) to avoid
+ * duplicating the per-agent model resolution logic.
+ */
+export function useAgentSelectedModel(agentId: string, agentModelRef: string): Model {
+  const modelState = useSelector((state: RootState) => state.model);
+  return useMemo(
+    () => selectAgentSelectedModel(modelState, agentId, agentModelRef),
+    [modelState, agentId, agentModelRef],
+  );
 }

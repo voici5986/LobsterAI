@@ -4,7 +4,7 @@ import React, { useCallback,useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
 import { type AppUpdateInfo,type AppUpdateRuntimeState,AppUpdateSource,AppUpdateStatus } from '../../shared/appUpdate/constants';
-import { ProviderName, ProviderRegistry, resolveCodingPlanBaseUrl } from '../../shared/providers';
+import { OpenClawProviderId, ProviderName, ProviderRegistry, resolveCodingPlanBaseUrl } from '../../shared/providers';
 import { type AppConfig, defaultConfig, getCustomProviderDefaultName, getProviderDisplayName, getVisibleProviders, isCustomProvider } from '../config';
 import { APP_ID, EXPORT_FORMAT_TYPE, EXPORT_PASSWORD } from '../constants/app';
 import { getProviderIcon } from '../providers/uiRegistry';
@@ -79,6 +79,21 @@ type ProviderConnectionTestResult = {
   provider: ProviderType;
 };
 
+const resolveModelSupportsImageForProvider = (
+  providerName: string,
+  model: { id: string; supportsImage?: boolean },
+): boolean => ProviderRegistry.resolveModelSupportsImage(providerName, model.id, model.supportsImage);
+
+const getOpenClawProviderIdForConfig = (
+  providerName: string,
+  providerConfig: ProviderConfig,
+): string => {
+  if (providerName === ProviderName.OpenAI && providerConfig.authType === 'oauth') {
+    return OpenClawProviderId.OpenAICodex;
+  }
+  return ProviderRegistry.getOpenClawProviderId(providerName);
+};
+
 interface ProviderExportEntry {
   enabled: boolean;
   apiKey: PasswordEncryptedPayload;
@@ -134,6 +149,13 @@ const hasProviderAuthConfigured = (provider: ProviderType, config: ProviderConfi
       return config.apiKey.trim().length > 0;
     }
     return (config.oauthAccessToken?.trim().length ?? 0) > 0;
+  }
+
+  // OpenAI in OAuth mode stores tokens in <CODEX_HOME>/auth.json (read by the
+  // OpenClaw runtime), not in the provider config — `authType === 'oauth'`
+  // alone is the signal that ChatGPT login completed.
+  if (provider === 'openai' && config.authType === 'oauth') {
+    return true;
   }
 
   return config.apiKey.trim().length > 0;
@@ -374,7 +396,7 @@ const getDefaultProviders = (): ProvidersConfig => {
         models: providerConfig.models?.map(model => ({
           ...model,
           name: model.name.replace('(Secure)', secureSuffix),
-          supportsImage: model.supportsImage ?? false,
+          supportsImage: resolveModelSupportsImageForProvider(providerKey, model),
         })),
       },
     ])
@@ -584,13 +606,28 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
   const [minimaxOAuthRegion, setMinimaxOAuthRegion] = useState<MiniMaxRegion>('cn');
   const minimaxOAuthCancelRef = useRef(false);
 
+  // OpenAI ChatGPT (Codex) OAuth state
+  type OpenAIOAuthPhase =
+    | { kind: 'idle' }
+    | { kind: 'pending' }
+    | { kind: 'success'; email?: string }
+    | { kind: 'error'; message: string };
+  const [openaiOAuthPhase, setOpenaiOAuthPhase] = useState<OpenAIOAuthPhase>({ kind: 'idle' });
+  // Mirrors <CODEX_HOME>/auth.json on disk; refreshed on tab focus and after
+  // login/logout. `null` = not yet checked.
+  const [openaiOAuthStatus, setOpenaiOAuthStatus] = useState<
+    { loggedIn: false } | { loggedIn: true; email?: string } | null
+  >(null);
+
   // Add state for providers configuration
   const [providers, setProviders] = useState<ProvidersConfig>(() => getDefaultProviders());
 
 
   // authType defaults to undefined on first open, which should behave as OAuth mode
   const minimaxIsOAuthMode = providers.minimax.authType !== 'apikey';
-  const isBaseUrlLocked = (activeProvider === 'zhipu' && providers.zhipu.codingPlanEnabled) || (activeProvider === 'qwen' && providers.qwen.codingPlanEnabled) || (activeProvider === 'volcengine' && providers.volcengine.codingPlanEnabled) || (activeProvider === 'moonshot' && providers.moonshot.codingPlanEnabled) || (activeProvider === 'minimax' && minimaxIsOAuthMode);
+  // OpenAI defaults to API key mode unless the user explicitly opts in to OAuth
+  const openaiIsOAuthMode = providers.openai.authType === 'oauth';
+  const isBaseUrlLocked = (activeProvider === 'zhipu' && providers.zhipu.codingPlanEnabled) || (activeProvider === 'qwen' && providers.qwen.codingPlanEnabled) || (activeProvider === 'volcengine' && providers.volcengine.codingPlanEnabled) || (activeProvider === 'moonshot' && providers.moonshot.codingPlanEnabled) || (activeProvider === 'qianfan' && providers.qianfan.codingPlanEnabled) || (activeProvider === 'xiaomi' && providers.xiaomi.codingPlanEnabled) || (activeProvider === 'minimax' && minimaxIsOAuthMode) || (activeProvider === 'openai' && openaiIsOAuthMode);
 
   // 创建引用来确保内容区域的滚动
   const contentRef = useRef<HTMLDivElement>(null);
@@ -827,6 +864,7 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
   const [bootstrapUser, setBootstrapUser] = useState<string>('');
   const [bootstrapSoul, setBootstrapSoul] = useState<string>('');
   const [bootstrapLoaded, setBootstrapLoaded] = useState<boolean>(false);
+  const [bootstrapTab, setBootstrapTab] = useState<'IDENTITY.md' | 'SOUL.md' | 'USER.md'>('IDENTITY.md');
   const [openClawEngineStatus, setOpenClawEngineStatus] = useState<OpenClawEngineStatus | null>(null);
 
   useEffect(() => {
@@ -1090,7 +1128,11 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
                 return {
                   ...model,
                   id,
-                  supportsImage: model.supportsImage ?? false,
+                  supportsImage: ProviderRegistry.resolveModelSupportsImage(
+                    providerKey,
+                    id,
+                    model.supportsImage,
+                  ),
                 };
               });
               return [
@@ -1484,6 +1526,95 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
     setMinimaxOAuthPhase({ kind: 'idle' });
   };
 
+  // Sync the persisted ChatGPT login state into local UI state on mount and
+  // whenever the OpenAI provider tab becomes active. Also reconciles stale
+  // providers config (e.g. auth.json deleted externally).
+  useEffect(() => {
+    let cancelled = false;
+    if (activeProvider !== 'openai') return;
+    void window.electron.openaiCodexOAuth.status().then((status) => {
+      if (cancelled) return;
+      if (status.loggedIn) {
+        setOpenaiOAuthStatus({ loggedIn: true, email: status.email ?? undefined });
+      } else {
+        setOpenaiOAuthStatus({ loggedIn: false });
+        setProviders(prev => {
+          if (prev.openai.authType !== 'oauth') return prev;
+          return { ...prev, openai: { ...prev.openai, authType: 'apikey' } };
+        });
+      }
+    }).catch(() => {
+      if (!cancelled) setOpenaiOAuthStatus({ loggedIn: false });
+    });
+    return () => { cancelled = true; };
+  }, [activeProvider]);
+
+  const persistOpenAIProvidersConfigInBackground = useCallback((nextProviders: ProvidersConfig) => {
+    void configService.updateConfig({ providers: nextProviders }).catch((saveError) => {
+      console.error('[Settings] failed to save OpenAI OAuth provider state:', saveError);
+      setError(i18nService.t('failedToSaveSettings'));
+    });
+  }, []);
+
+  const handleOpenAIOAuthLogin = async () => {
+    setOpenaiOAuthPhase({ kind: 'pending' });
+    try {
+      const result = await window.electron.openaiCodexOAuth.start();
+      if (!result.success) {
+        setOpenaiOAuthPhase({ kind: 'error', message: result.error });
+        return;
+      }
+      const nextProviders: ProvidersConfig = {
+        ...providers,
+        openai: {
+          ...providers.openai,
+          enabled: true,
+          authType: 'oauth',
+        },
+      };
+      setProviders(nextProviders);
+      setOpenaiOAuthStatus({ loggedIn: true, email: result.email ?? undefined });
+      setOpenaiOAuthPhase({ kind: 'success', email: result.email ?? undefined });
+      persistOpenAIProvidersConfigInBackground(nextProviders);
+      setTimeout(() => setOpenaiOAuthPhase({ kind: 'idle' }), 1500);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setOpenaiOAuthPhase({ kind: 'error', message });
+    }
+  };
+
+  const handleCancelOpenAIOAuthLogin = async () => {
+    try {
+      await window.electron.openaiCodexOAuth.cancel();
+    } catch {
+      /* ignore — we still want to reset the UI */
+    }
+    setOpenaiOAuthPhase({ kind: 'idle' });
+  };
+
+  const handleOpenAIOAuthLogout = async () => {
+    const nextOpenAIProvider = {
+      ...providers.openai,
+      enabled: providers.openai.apiKey.trim().length > 0,
+      authType: 'apikey' as const,
+    };
+    const nextProviders: ProvidersConfig = {
+      ...providers,
+      openai: {
+        ...nextOpenAIProvider,
+      },
+    };
+    setProviders(nextProviders);
+    setOpenaiOAuthStatus({ loggedIn: false });
+    setOpenaiOAuthPhase({ kind: 'idle' });
+    persistOpenAIProvidersConfigInBackground(nextProviders);
+    try {
+      await window.electron.openaiCodexOAuth.logout();
+    } catch {
+      /* ignore — file may already be gone */
+    }
+  };
+
   const hasCoworkConfigChanges = coworkAgentEngine !== coworkConfig.agentEngine
     || coworkMemoryEnabled !== coworkConfig.memoryEnabled
     || coworkMemoryLlmJudgeEnabled !== coworkConfig.memoryLlmJudgeEnabled
@@ -1556,37 +1687,20 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
     void loadCoworkMemoryData();
   }, [activeTab, loadCoworkMemoryData]);
 
-  /**
-   * Detect OpenClaw default template content and return empty string.
-   * Templates contain YAML frontmatter and specific marker phrases.
-   */
-  const stripDefaultTemplate = (content: string): string => {
-    if (!content.trim()) return '';
-    const TEMPLATE_MARKERS = [
-      'Fill this in during your first conversation',
-      "You're not a chatbot. You're becoming someone",
-      'Learn about the person you\'re helping',
-    ];
-    if (TEMPLATE_MARKERS.some((m) => content.includes(m))) return '';
-    return content;
-  };
-
   useEffect(() => {
     if (activeTab !== 'coworkAgent') return;
-    if (!bootstrapLoaded) {
-      void (async () => {
-        const [identity, user, soul] = await Promise.all([
-          coworkService.readBootstrapFile('IDENTITY.md'),
-          coworkService.readBootstrapFile('USER.md'),
-          coworkService.readBootstrapFile('SOUL.md'),
-        ]);
-        setBootstrapIdentity(stripDefaultTemplate(identity));
-        setBootstrapUser(stripDefaultTemplate(user));
-        setBootstrapSoul(stripDefaultTemplate(soul));
-        setBootstrapLoaded(true);
-      })();
-    }
-  }, [activeTab, bootstrapLoaded]);
+    void (async () => {
+      const [identity, user, soul] = await Promise.all([
+        coworkService.readBootstrapFile('IDENTITY.md'),
+        coworkService.readBootstrapFile('USER.md'),
+        coworkService.readBootstrapFile('SOUL.md'),
+      ]);
+      setBootstrapIdentity(identity);
+      setBootstrapUser(user);
+      setBootstrapSoul(soul);
+      setBootstrapLoaded(true);
+    })();
+  }, [activeTab]);
 
   const resetCoworkMemoryEditor = () => {
     setCoworkMemoryEditingId(null);
@@ -1824,16 +1938,18 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
       });
 
       // 更新 Redux store 中的可用模型列表
-      const allModels: { id: string; name: string; provider?: string; providerKey?: string; supportsImage?: boolean }[] = [];
+      const allModels: { id: string; name: string; provider?: string; providerKey?: string; openClawProviderId?: string; supportsImage?: boolean }[] = [];
       Object.entries(normalizedProviders).forEach(([providerName, config]) => {
         if (config.enabled && config.models) {
+          const openClawProviderId = getOpenClawProviderIdForConfig(providerName, config);
           config.models.forEach(model => {
             allModels.push({
               id: model.id,
               name: model.name,
               provider: getProviderDisplayName(providerName, config),
               providerKey: providerName,
-              supportsImage: model.supportsImage ?? false,
+              openClawProviderId,
+              supportsImage: resolveModelSupportsImageForProvider(providerName, model),
             });
           });
         }
@@ -1865,7 +1981,7 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
         }
       }
 
-      // Save bootstrap files (IDENTITY.md, USER.md, SOUL.md) only if loaded
+      // Save bootstrap files (IDENTITY.md, USER.md, SOUL.md) only if loaded.
       if (bootstrapLoaded) {
         const results = await Promise.all([
           coworkService.writeBootstrapFile('IDENTITY.md', bootstrapIdentity),
@@ -2011,7 +2127,11 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
     const nextModel = {
       id: modelId,
       name: modelName,
-      supportsImage: newModelSupportsImage,
+      supportsImage: ProviderRegistry.resolveModelSupportsImage(
+        activeProvider,
+        modelId,
+        newModelSupportsImage,
+      ),
     };
     const updatedModels = isEditingModel && editingModelId
       ? currentModels.map(model => (model.id === editingModelId ? nextModel : model))
@@ -2229,7 +2349,7 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
             baseUrl: resolveBaseUrl(providerKey as ProviderType, providerConfig.baseUrl, apiFormat),
             apiFormat,
             codingPlanEnabled: (providerConfig as ProviderConfig).codingPlanEnabled,
-            models: providerConfig.models,
+            models: normalizeModels(providerKey, providerConfig.models),
           },
         ] as const;
       })
@@ -2248,10 +2368,10 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
     };
   };
 
-  const normalizeModels = (models?: Model[]) =>
+  const normalizeModels = (providerKey: string, models?: Model[]) =>
     models?.map(model => ({
       ...model,
-      supportsImage: model.supportsImage ?? false,
+      supportsImage: resolveModelSupportsImageForProvider(providerKey, model),
     }));
 
   const DEFAULT_EXPORT_PASSWORD = EXPORT_PASSWORD;
@@ -2368,7 +2488,7 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
           }
         }
 
-        const models = normalizeModels(providerData.models);
+        const models = normalizeModels(providerKey, providerData.models);
         const existing = providers[providerKey];
 
         providerUpdates[providerKey] = {
@@ -2452,7 +2572,7 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
           }
         }
 
-        const models = normalizeModels(providerData.models);
+        const models = normalizeModels(providerKey, providerData.models);
         const existing = providers[providerKey];
 
         providerUpdates[providerKey] = {
@@ -3508,8 +3628,165 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
                 </div>
               )}
 
+              {/* OpenAI ChatGPT (Codex) OAuth auth section */}
+              {activeProvider === 'openai' && (
+                <div className="space-y-3">
+                  {/* Auth type radio cards */}
+                  <div>
+                    <p className="text-xs font-medium text-foreground mb-2">
+                      {i18nService.t('openaiAuthMethodLabel')}
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProviders(prev => ({
+                            ...prev,
+                            openai: {
+                              ...prev.openai,
+                              authType: 'apikey',
+                            },
+                          }));
+                          setOpenaiOAuthPhase({ kind: 'idle' });
+                        }}
+                        className={`flex-1 p-3 rounded-xl border-2 text-left transition-all ${!openaiIsOAuthMode ? 'border-primary bg-primary/5' : 'border-border opacity-60 hover:opacity-80'}`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <KeyIcon className="h-4 w-4 text-foreground mt-0.5 shrink-0" />
+                          {!openaiIsOAuthMode && <CheckCircleIcon className="h-4 w-4 text-primary shrink-0" />}
+                        </div>
+                        <p className="text-xs font-semibold text-foreground mt-1.5">{i18nService.t('openaiOAuthTabApiKey')}</p>
+                        <p className="text-[11px] text-secondary mt-0.5 leading-relaxed">{i18nService.t('openaiAuthApiKeyDesc')}</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setProviders(prev => ({
+                          ...prev,
+                          openai: {
+                            ...prev.openai,
+                            authType: 'oauth',
+                          },
+                        }))}
+                        className={`flex-1 p-3 rounded-xl border-2 text-left transition-all ${openaiIsOAuthMode ? 'border-primary bg-primary/5' : 'border-border opacity-60 hover:opacity-80'}`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <ShieldCheckIcon className="h-4 w-4 text-foreground mt-0.5 shrink-0" />
+                          {openaiIsOAuthMode && <CheckCircleIcon className="h-4 w-4 text-primary shrink-0" />}
+                        </div>
+                        <p className="text-xs font-semibold text-foreground mt-1.5">{i18nService.t('openaiOAuthTabOAuth')}</p>
+                        <p className="text-[11px] text-secondary mt-0.5 leading-relaxed">{i18nService.t('openaiAuthOAuthDesc')}</p>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* OAuth mode UI */}
+                  {openaiIsOAuthMode && (
+                    <div className="space-y-2 min-h-[68px]">
+                      {/* Idle + already logged in */}
+                      {openaiOAuthPhase.kind === 'idle' && openaiOAuthStatus?.loggedIn && (
+                        <div className="p-3 rounded-xl bg-green-500/10 border border-green-500/20 space-y-2">
+                          <p className="text-xs text-green-600 dark:text-green-400 font-medium">
+                            {i18nService.t('openaiOAuthLoggedIn')}
+                            {openaiOAuthStatus.email ? ` (${openaiOAuthStatus.email})` : ''}
+                          </p>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={handleOpenAIOAuthLogin}
+                              className="px-2.5 py-1 text-[11px] font-medium rounded-lg border border-border text-foreground hover:bg-surface-raised transition-colors"
+                            >
+                              {i18nService.t('openaiOAuthRelogin')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { void handleOpenAIOAuthLogout(); }}
+                              className="px-2.5 py-1 text-[11px] font-medium rounded-lg border border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/10 transition-colors"
+                            >
+                              {i18nService.t('openaiOAuthLogout')}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Idle + not logged in — show login CTA */}
+                      {openaiOAuthPhase.kind === 'idle' && openaiOAuthStatus && !openaiOAuthStatus.loggedIn && (
+                        <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={handleOpenAIOAuthLogin}
+                            className="w-full py-2 text-xs font-medium rounded-xl bg-primary text-white hover:bg-primary-hover transition-colors"
+                          >
+                            {i18nService.t('openaiOAuthLogin')}
+                          </button>
+                          <p className="text-[11px] text-secondary">
+                            {i18nService.t('openaiOAuthHint')}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Pending — browser opened, waiting for callback */}
+                      {openaiOAuthPhase.kind === 'pending' && (
+                        <div className="p-3 rounded-xl bg-surface-inset border border-border space-y-2">
+                          <p className="text-xs text-foreground font-medium">
+                            {i18nService.t('openaiOAuthOpenBrowserHint')}
+                          </p>
+                          <p className="text-[11px] text-secondary">
+                            {i18nService.t('openaiOAuthStatusPending')}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => { void handleCancelOpenAIOAuthLogin(); }}
+                            className="px-2.5 py-1 text-[11px] font-medium rounded-lg border border-border text-foreground hover:bg-surface-raised transition-colors"
+                          >
+                            {i18nService.t('openaiOAuthCancel')}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Success */}
+                      {openaiOAuthPhase.kind === 'success' && (
+                        <div className="p-3 rounded-xl bg-green-500/10 border border-green-500/20">
+                          <p className="text-xs text-green-600 dark:text-green-400 font-medium">
+                            {i18nService.t('openaiOAuthStatusSuccess')}
+                            {openaiOAuthPhase.email ? ` (${openaiOAuthPhase.email})` : ''}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Error */}
+                      {openaiOAuthPhase.kind === 'error' && (
+                        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 space-y-2">
+                          <p className="text-xs text-red-600 dark:text-red-400 font-medium">
+                            {i18nService.t('openaiOAuthStatusError')}
+                          </p>
+                          <p className="text-[11px] text-red-600/80 dark:text-red-400/80 break-words">
+                            {openaiOAuthPhase.message}
+                          </p>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={handleOpenAIOAuthLogin}
+                              className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors"
+                            >
+                              {i18nService.t('openaiOAuthRelogin')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setOpenaiOAuthPhase({ kind: 'idle' })}
+                              className="px-2.5 py-1 text-[11px] font-medium rounded-lg border border-border text-foreground hover:bg-surface-raised transition-colors"
+                            >
+                              {i18nService.t('openaiOAuthCancel')}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Standard API key section for non-MiniMax providers */}
-              {providerRequiresApiKey(activeProvider) && activeProvider !== 'minimax' && (
+              {providerRequiresApiKey(activeProvider) && activeProvider !== 'minimax' && !(activeProvider === 'openai' && openaiIsOAuthMode) && (
                 <div>
                   {/* Standard API Key input for non-Qwen providers */}
                   {activeProvider !== 'qwen' && (
@@ -3820,6 +4097,22 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
                     </p>
                   </div>
                 )}
+                {/* Qianfan Coding Plan 提示 */}
+                {activeProvider === 'qianfan' && providers.qianfan.codingPlanEnabled && (
+                  <div className="mt-1.5 p-2 rounded-lg bg-primary-muted border border-primary-muted">
+                    <p className="text-[11px] text-primary dark:text-primary">
+                      <span className="font-medium">Coding Plan:</span> {i18nService.t('qianfanCodingPlanEndpointHint')}
+                    </p>
+                  </div>
+                )}
+                {/* Xiaomi Coding Plan 提示 */}
+                {activeProvider === 'xiaomi' && providers.xiaomi.codingPlanEnabled && (
+                  <div className="mt-1.5 p-2 rounded-lg bg-primary-muted border border-primary-muted">
+                    <p className="text-[11px] text-primary dark:text-primary">
+                      <span className="font-medium">Coding Plan:</span> {i18nService.t('xiaomiCodingPlanEndpointHint')}
+                    </p>
+                  </div>
+                )}
               </div>
               )}
 
@@ -3975,6 +4268,62 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
                 </div>
               )}
 
+              {/* Qianfan Coding Plan 开关 (仅 Qianfan) */}
+              {activeProvider === 'qianfan' && (
+                <div className="flex items-center justify-between p-3 rounded-xl bg-surface border border-border">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs font-medium text-foreground">
+                        Coding Plan
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-primary-muted text-primary">
+                        Beta
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-secondary">
+                      {i18nService.t('qianfanCodingPlanHint')}
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer ml-3">
+                    <input
+                      type="checkbox"
+                      checked={providers.qianfan.codingPlanEnabled ?? false}
+                      onChange={(e) => handleProviderConfigChange('qianfan', 'codingPlanEnabled', e.target.checked ? 'true' : 'false')}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+              )}
+
+              {/* Xiaomi Coding Plan 开关 (仅 Xiaomi) */}
+              {activeProvider === 'xiaomi' && (
+                <div className="flex items-center justify-between p-3 rounded-xl bg-surface border border-border">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs font-medium text-foreground">
+                        Coding Plan
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-primary-muted text-primary">
+                        Beta
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-secondary">
+                      {i18nService.t('xiaomiCodingPlanHint')}
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer ml-3">
+                    <input
+                      type="checkbox"
+                      checked={providers.xiaomi.codingPlanEnabled ?? false}
+                      onChange={(e) => handleProviderConfigChange('xiaomi', 'codingPlanEnabled', e.target.checked ? 'true' : 'false')}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+              )}
+
               {/* 测试连接按钮 */}
               {!(activeProvider === 'minimax' && minimaxIsOAuthMode) && (
               <div className="flex items-center space-x-3">
@@ -4064,54 +4413,47 @@ const Settings: React.FC<SettingsProps> = ({ onClose, initialTab, notice, notice
           </div>
         );
 
-      case 'coworkAgent':
+      case 'coworkAgent': {
+        const bootstrapTabs = [
+          { key: 'IDENTITY.md' as const, titleKey: 'coworkBootstrapIdentityTitle', hintKey: 'coworkBootstrapIdentityHint', value: bootstrapIdentity, setter: setBootstrapIdentity },
+          { key: 'SOUL.md' as const, titleKey: 'coworkBootstrapSoulTitle', hintKey: 'coworkBootstrapSoulHint', value: bootstrapSoul, setter: setBootstrapSoul },
+          { key: 'USER.md' as const, titleKey: 'coworkBootstrapUserTitle', hintKey: 'coworkBootstrapUserHint', value: bootstrapUser, setter: setBootstrapUser },
+        ];
+        const activeItem = bootstrapTabs.find((t) => t.key === bootstrapTab) ?? bootstrapTabs[0];
         return (
-          <div className="space-y-6">
-            {/* Agent Settings (IDENTITY.md + SOUL.md) */}
-            <div className="space-y-4 rounded-xl border px-4 py-4 border-border">
-              <div className="text-sm font-medium text-foreground">
-                {i18nService.t('coworkBootstrapAgentSectionTitle')}
-              </div>
-              {[
-                { filename: 'IDENTITY.md', titleKey: 'coworkBootstrapIdentityTitle', hintKey: 'coworkBootstrapIdentityHint', value: bootstrapIdentity, setter: setBootstrapIdentity },
-                { filename: 'SOUL.md', titleKey: 'coworkBootstrapSoulTitle', hintKey: 'coworkBootstrapSoulHint', value: bootstrapSoul, setter: setBootstrapSoul },
-              ].map(({ filename, titleKey, hintKey, value, setter }) => (
-                <div key={filename} className="space-y-2">
-                  <div className="text-xs font-medium text-secondary">
-                    {i18nService.t(titleKey)}
-                    <span className="ml-1.5 font-normal opacity-60">
-                      （{i18nService.t('coworkBootstrapStoragePath')}：<span className="font-mono">{joinWorkspacePath(coworkConfig.workingDirectory, filename)}</span>）
-                    </span>
-                  </div>
-                  <textarea
-                    value={value}
-                    onChange={(e) => setter(e.target.value)}
-                    rows={3}
-                    className="w-full rounded-lg border px-3 py-2 text-sm border-border bg-surface text-foreground resize-y"
-                    placeholder={i18nService.t(hintKey)}
-                  />
-                </div>
+          <div className="flex flex-col h-full space-y-4">
+            <div className="flex gap-1 border-b border-border shrink-0">
+              {bootstrapTabs.map((tab) => (
+                <button
+                  type="button"
+                  key={tab.key}
+                  onClick={() => setBootstrapTab(tab.key)}
+                  className={`px-4 py-2 text-sm font-medium transition-colors rounded-t-lg ${
+                    bootstrapTab === tab.key
+                      ? 'bg-primary-muted text-primary border-b-2 border-primary'
+                      : 'text-secondary hover:text-foreground hover:bg-surface-raised'
+                  }`}
+                >
+                  {i18nService.t(tab.titleKey)}
+                </button>
               ))}
             </div>
-
-            {/* User Profile (USER.md) */}
-            <div className="space-y-3 rounded-xl border px-4 py-4 border-border">
-              <div className="text-sm font-medium text-foreground">
-                {i18nService.t('coworkBootstrapUserTitle')}
-                <span className="ml-1.5 text-xs font-normal opacity-60 text-secondary">
-                  （{i18nService.t('coworkBootstrapStoragePath')}：<span className="font-mono">{joinWorkspacePath(coworkConfig.workingDirectory, 'USER.md')}</span>）
-                </span>
+            <div className="flex flex-col flex-1 min-h-0 space-y-2">
+              <p className="text-xs text-secondary shrink-0">{i18nService.t(activeItem.hintKey)}</p>
+              <div className="text-xs text-secondary opacity-60 shrink-0">
+                {i18nService.t('coworkBootstrapStoragePath')}：<span className="font-mono">{joinWorkspacePath(coworkConfig.workingDirectory, activeItem.key)}</span>
               </div>
               <textarea
-                value={bootstrapUser}
-                onChange={(e) => setBootstrapUser(e.target.value)}
-                rows={3}
-                className="w-full rounded-lg border px-3 py-2 text-sm border-border bg-surface text-foreground resize-y"
-                placeholder={i18nService.t('coworkBootstrapUserHint')}
+                key={activeItem.key}
+                value={activeItem.value}
+                onChange={(e) => activeItem.setter(e.target.value)}
+                className="w-full flex-1 min-h-[280px] rounded-lg border px-3 py-2 text-sm leading-relaxed border-border bg-surface text-foreground resize-none"
+                placeholder={i18nService.t('coworkBootstrapPlaceholder')}
               />
             </div>
           </div>
         );
+      }
 
       case 'shortcuts':
         return (

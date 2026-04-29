@@ -8,6 +8,7 @@ import {
   updateAgent as updateAgentAction,
 } from '../store/slices/agentSlice';
 import { clearCurrentSession } from '../store/slices/coworkSlice';
+import { clearAgentSelectedModel } from '../store/slices/modelSlice';
 import { clearActiveSkills,setActiveSkillIds } from '../store/slices/skillSlice';
 import type { Agent, PresetAgent } from '../types/agent';
 
@@ -107,6 +108,7 @@ class AgentService {
       const wasCurrentAgent = store.getState().agent.currentAgentId === id;
       await window.electron?.agents?.delete(id);
       store.dispatch(removeAgent(id));
+      store.dispatch(clearAgentSelectedModel(id));
       if (wasCurrentAgent) {
         this.switchAgent('main');
         const { coworkService } = await import('./cowork');

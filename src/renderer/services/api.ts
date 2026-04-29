@@ -1,7 +1,7 @@
-import { store } from '../store';
-import { configService } from './config';
-import { ChatMessagePayload, ChatUserMessageInput, ImageAttachment } from '../types/chat';
 import { resolveCodingPlanBaseUrl } from '../../shared/providers';
+import { store } from '../store';
+import { ChatMessagePayload, ChatUserMessageInput, ImageAttachment } from '../types/chat';
+import { configService } from './config';
 
 export interface ApiConfig {
   apiKey: string;
@@ -321,7 +321,7 @@ class ApiService {
       throw new ApiError('API configuration not set. Please configure your API settings in the settings menu.');
     }
 
-    const selectedModel = store.getState().model.selectedModel;
+    const selectedModel = store.getState().model.defaultSelectedModel;
     const provider = this.detectProvider(
       selectedModel.id,
       selectedModel.providerKey ?? selectedModel.provider

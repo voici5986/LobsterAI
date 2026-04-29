@@ -56,6 +56,24 @@
   FileWrite $9 "$8 phase=process-stop-complete exit=$0 elapsed_ms=$5$\r$\n"
   FileClose $9
 
+  ; ── Clean stale openclaw-weixin session data ──
+  ; On reinstall, old bot tokens cause the ilink server to reject new QR logins
+  ; because it still considers the old session active. Remove stale accounts
+  ; from both possible state directories so the fresh install starts clean.
+  DetailPrint "[Installer] Clearing stale Weixin session data"
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -Command "\
+    $$dirs = @(\
+      (Join-Path $$env:USERPROFILE \".openclaw\openclaw-weixin\accounts\"),\
+      (Join-Path $$env:APPDATA \"LobsterAI\openclaw\state\openclaw-weixin\accounts\")\
+    );\
+    foreach ($$d in $$dirs) {\
+      if (Test-Path $$d) {\
+        Remove-Item -Path $$d -Recurse -Force -ErrorAction SilentlyContinue;\
+        Write-Output \"[Installer] Removed stale Weixin accounts: $$d\";\
+      }\
+    }"'
+  Pop $0
+
   ; ── Backup user-created skills to AppData before extraction overwrites them ──
   ; Copy non-bundled skills to %APPDATA%\LobsterAI\skills-backup\ so they are
   ; preserved when NSIS extracts the new version over the existing install.
@@ -200,10 +218,31 @@
   System::Call 'kernel32::GetTickCount()i .r6'
   IntOp $5 $6 - $7
 
-  StrCmp $0 "0" TarExtractOK
+  ; Diagnostic: log raw exit code with brackets to reveal trailing whitespace
+  StrLen $4 $0
+  FileOpen $2 "$APPDATA\LobsterAI\install-timing.log" a
+  !insertmacro GetTimestamp $8
+  FileWrite $2 "$8 phase=tar-extract-raw-exit exit_raw=[$0] exit_len=$4$\r$\n"
+  FileClose $2
+
+  ; "error" = nsExec couldn't start the process (check before IntCmp, which
+  ; converts non-numeric strings to 0 and would misidentify "error" as success)
+  StrCmp $0 "error" TarExtractProcessFailed
+  ; IntCmp tolerates trailing whitespace/CR that StrCmp would reject
+  IntCmp $0 0 TarExtractOK TarExtractNonZero TarExtractNonZero
+
+  TarExtractProcessFailed:
     FileOpen $2 "$APPDATA\LobsterAI\install-timing.log" a
     !insertmacro GetTimestamp $8
-    FileWrite $2 "$8 phase=tar-extract-error exit=$0 elapsed_ms=$5$\r$\n"
+    FileWrite $2 "$8 phase=tar-extract-error exit=$0 elapsed_ms=$5 reason=process-start-failed$\r$\n"
+    FileClose $2
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Resource extraction failed: could not start extractor process (exit=$0). This may be caused by antivirus software. See %APPDATA%\LobsterAI\install-timing.log for details."
+    Goto TarExtractOK
+
+  TarExtractNonZero:
+    FileOpen $2 "$APPDATA\LobsterAI\install-timing.log" a
+    !insertmacro GetTimestamp $8
+    FileWrite $2 "$8 phase=tar-extract-error exit=$0 elapsed_ms=$5 reason=nonzero-exit$\r$\n"
     FileClose $2
     MessageBox MB_OK|MB_ICONEXCLAMATION "Resource extraction failed (exit code $0). See %APPDATA%\LobsterAI\install-timing.log for details."
   TarExtractOK:

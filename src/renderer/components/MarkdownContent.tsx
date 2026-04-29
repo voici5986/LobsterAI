@@ -424,6 +424,7 @@ const findFallbackPathFromContext = (
 const createMarkdownComponents = (
   resolveLocalFilePath?: (href: string, text: string) => string | null,
   showRevealInFolderAction = false,
+  onImageClick?: (src: string) => void,
 ) => ({
   p: ({ node, className, children, ...props }: any) => (
     <p className="my-1 first:mt-0 last:mb-0 leading-6 text-foreground" {...props}>
@@ -504,10 +505,23 @@ const createMarkdownComponents = (
     </td>
   ),
   img: ({ node, className, src, alt, ...props }: any) => {
-    const resolvedSrc = typeof src === 'string' && src.startsWith('file://')
-      ? src.replace(/^file:\/\//, 'localfile://')
-      : src;
-    return <img className="max-w-full h-auto rounded-xl my-4" src={resolvedSrc} alt={alt} {...props} />;
+    let resolvedSrc = src;
+    if (typeof src === 'string') {
+      if (src.startsWith('file://')) {
+        resolvedSrc = src.replace(/^file:\/\//, 'localfile://');
+      } else if (src.startsWith('/') && !src.startsWith('//')) {
+        resolvedSrc = `localfile://${src}`;
+      }
+    }
+    return (
+      <img
+        className={`max-w-full max-h-96 object-contain rounded-xl my-4${onImageClick ? ' cursor-pointer hover:opacity-90 transition-opacity' : ''}`}
+        src={resolvedSrc}
+        alt={alt}
+        onClick={onImageClick && resolvedSrc ? () => onImageClick(resolvedSrc) : undefined}
+        {...props}
+      />
+    );
   },
   hr: ({ node, ...props }: any) => (
     <hr className="my-5 border-border" {...props} />
@@ -674,6 +688,7 @@ interface MarkdownContentProps {
   className?: string;
   resolveLocalFilePath?: (href: string, text: string) => string | null;
   showRevealInFolderAction?: boolean;
+  onImageClick?: (src: string) => void;
 }
 
 const MarkdownContent: React.FC<MarkdownContentProps> = ({
@@ -681,10 +696,11 @@ const MarkdownContent: React.FC<MarkdownContentProps> = ({
   className = '',
   resolveLocalFilePath,
   showRevealInFolderAction = false,
+  onImageClick,
 }) => {
   const components = useMemo(
-    () => createMarkdownComponents(resolveLocalFilePath, showRevealInFolderAction),
-    [resolveLocalFilePath, showRevealInFolderAction]
+    () => createMarkdownComponents(resolveLocalFilePath, showRevealInFolderAction, onImageClick),
+    [resolveLocalFilePath, showRevealInFolderAction, onImageClick]
   );
   const normalizedContent = useMemo(() => normalizeDisplayMath(encodeFileUrlsInMarkdown(content)), [content]);
   return (

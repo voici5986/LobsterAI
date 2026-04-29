@@ -75,7 +75,7 @@ export interface IMGatewayManagerOptions {
   coworkStore?: CoworkStore;
   ensureCoworkReady?: () => Promise<void>;
   isOpenClawEngine?: () => boolean;
-  syncOpenClawConfig?: () => Promise<void>;
+  syncOpenClawConfig?: (reason?: string) => Promise<void>;
   ensureOpenClawGatewayConnected?: () => Promise<void>;
   getOpenClawGatewayClient?: () => GatewayClientLike | null;
   ensureOpenClawGatewayReady?: () => Promise<void>;
@@ -96,7 +96,7 @@ export class IMGatewayManager extends EventEmitter {
   private getSkillsPrompt: (() => Promise<string | null>) | null = null;
   private ensureCoworkReady: (() => Promise<void>) | null = null;
   private isOpenClawEngine: (() => boolean) | null = null;
-  private syncOpenClawConfig: (() => Promise<void>) | null = null;
+  private syncOpenClawConfig: ((reason?: string) => Promise<void>) | null = null;
   private ensureOpenClawGatewayConnected: (() => Promise<void>) | null = null;
   private getOpenClawGatewayClient: (() => GatewayClientLike | null) | null = null;
   private ensureOpenClawGatewayReady: (() => Promise<void>) | null = null;
@@ -376,7 +376,7 @@ export class IMGatewayManager extends EventEmitter {
         newNb.secret !== oldNb?.secret;
       if (credentialsChanged) {
         console.log('[IMGatewayManager] netease-bee credentials changed, syncing OpenClaw config...');
-        this.syncOpenClawConfig?.();
+        this.syncOpenClawConfig?.('im-config-change:netease-bee');
       }
     }
 
@@ -772,62 +772,62 @@ export class IMGatewayManager extends EventEmitter {
     if (platform === 'dingtalk') {
       // DingTalk runs via OpenClaw gateway (dingtalk-connector plugin)
       console.log('[IMGatewayManager] DingTalk in OpenClaw mode, syncing config instead of starting direct gateway');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-start:dingtalk');
       await this.ensureOpenClawGatewayConnected?.();
       return;
     } else if (platform === 'feishu') {
       // Feishu runs via OpenClaw gateway (feishu-openclaw-plugin)
       console.log('[IMGatewayManager] Feishu in OpenClaw mode, syncing config instead of starting direct gateway');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-start:feishu');
       await this.ensureOpenClawGatewayConnected?.();
       return;
     } else if (platform === 'telegram') {
       // Telegram always runs via OpenClaw gateway
       console.log('[IMGatewayManager] Telegram in OpenClaw mode, syncing config instead of starting direct gateway');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-start:telegram');
       // Connect the gateway WebSocket so channel events (e.g. Telegram messages) are received
       await this.ensureOpenClawGatewayConnected?.();
       return;
     } else if (platform === 'discord') {
       // Discord runs via OpenClaw gateway
       console.log('[IMGatewayManager] Discord in OpenClaw mode, syncing config instead of starting direct gateway');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-start:discord');
       await this.ensureOpenClawGatewayConnected?.();
       return;
     } else if (platform === 'nim') {
       // NIM runs via OpenClaw gateway (openclaw-nim plugin)
       console.log('[IMGatewayManager] NIM in OpenClaw mode, syncing config instead of starting direct gateway');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-start:nim');
       await this.ensureOpenClawGatewayConnected?.();
       return;
     } else if (platform === 'netease-bee') {
       // netease-bee runs via OpenClaw gateway
       console.log('[IMGatewayManager] netease-bee in OpenClaw mode, syncing config instead of starting direct gateway');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-start:netease-bee');
       await this.ensureOpenClawGatewayConnected?.();
       return;
     } else if (platform === 'qq') {
       // QQ runs via OpenClaw gateway (qqbot plugin)
       console.log('[IMGatewayManager] QQ in OpenClaw mode, syncing config instead of starting direct gateway');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-start:qq');
       await this.ensureOpenClawGatewayConnected?.();
       return;
     } else if (platform === 'wecom') {
       // WeCom runs via OpenClaw gateway (wecom-openclaw-plugin)
       console.log('[IMGatewayManager] WeCom in OpenClaw mode, syncing config instead of starting direct gateway');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-start:wecom');
       await this.ensureOpenClawGatewayConnected?.();
       return;
     } else if (platform === 'weixin') {
       // Weixin runs via OpenClaw gateway (weixin-openclaw-plugin)
       console.debug('[IMGatewayManager] Weixin in OpenClaw mode, syncing config instead of starting direct gateway');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-start:weixin');
       await this.ensureOpenClawGatewayConnected?.();
       return;
     } else if (platform === 'popo') {
       // POPO runs via OpenClaw gateway (moltbot-popo plugin)
       console.log('[IMGatewayManager] POPO in OpenClaw mode, syncing config instead of starting direct gateway');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-start:popo');
       await this.ensureOpenClawGatewayConnected?.();
       return;
     }
@@ -840,52 +840,52 @@ export class IMGatewayManager extends EventEmitter {
     if (platform === 'dingtalk') {
       // DingTalk runs via OpenClaw gateway
       console.log('[IMGatewayManager] DingTalk in OpenClaw mode, syncing disabled config');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-stop:dingtalk');
       return;
     } else if (platform === 'feishu') {
       // Feishu runs via OpenClaw gateway
       console.log('[IMGatewayManager] Feishu in OpenClaw mode, syncing disabled config');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-stop:feishu');
       return;
     } else if (platform === 'telegram') {
       // Telegram always runs via OpenClaw gateway
       console.log('[IMGatewayManager] Telegram in OpenClaw mode, syncing disabled config');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-stop:telegram');
       return;
     } else if (platform === 'discord') {
       // Discord runs via OpenClaw gateway
       console.log('[IMGatewayManager] Discord in OpenClaw mode, syncing disabled config');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-stop:discord');
       return;
     } else if (platform === 'nim') {
       // NIM runs via OpenClaw gateway
       console.log('[IMGatewayManager] NIM in OpenClaw mode, syncing disabled config');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-stop:nim');
       return;
     } else if (platform === 'netease-bee') {
       // netease-bee runs via OpenClaw gateway
       console.log('[IMGatewayManager] netease-bee in OpenClaw mode, syncing disabled config');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-stop:netease-bee');
       return;
     } else if (platform === 'qq') {
       // QQ runs via OpenClaw gateway
       console.log('[IMGatewayManager] QQ in OpenClaw mode, syncing disabled config');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-stop:qq');
       return;
     } else if (platform === 'wecom') {
       // WeCom runs via OpenClaw gateway
       console.log('[IMGatewayManager] WeCom in OpenClaw mode, syncing disabled config');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-stop:wecom');
       return;
     } else if (platform === 'weixin') {
       // Weixin runs via OpenClaw gateway
       console.debug('[IMGatewayManager] Weixin in OpenClaw mode, syncing disabled config');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-stop:weixin');
       return;
     } else if (platform === 'popo') {
       // POPO runs via OpenClaw gateway
       console.log('[IMGatewayManager] POPO in OpenClaw mode, syncing disabled config');
-      await this.syncOpenClawConfig?.();
+      await this.syncOpenClawConfig?.('im-gateway-stop:popo');
       return;
     }
   }
@@ -950,7 +950,7 @@ export class IMGatewayManager extends EventEmitter {
     if (openClawPlatformsToStart.length > 0) {
       console.log(`[IMGatewayManager] Starting OpenClaw platforms in batch: ${openClawPlatformsToStart.join(', ')}`);
       try {
-        await this.syncOpenClawConfig?.();
+        await this.syncOpenClawConfig?.(`im-gateway-start-batch:${openClawPlatformsToStart.join(',')}`);
         await this.ensureOpenClawGatewayConnected?.();
       } catch (error: any) {
         console.error(`[IMGatewayManager] Failed to start OpenClaw platforms: ${error.message}`);
@@ -1550,7 +1550,7 @@ export class IMGatewayManager extends EventEmitter {
         // the newly saved account credentials. The gateway's web.login.wait
         // handler called context.startChannel, but the channel may not fully
         // initialize without a proper config-driven restart.
-        await this.syncOpenClawConfig?.();
+        await this.syncOpenClawConfig?.('im-weixin-qr-login-connected');
         await this.ensureOpenClawGatewayConnected?.();
       }
       return result;

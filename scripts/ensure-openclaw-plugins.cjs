@@ -691,6 +691,91 @@ exports.plugin = {
   } else {
     log('openclaw-lark not found, skipping deferred loading patch');
   }
+
+  // --- Post-install patch: openclaw-lark Content-Disposition filename encoding ---
+  // The Feishu API returns Chinese filenames as raw UTF-8 bytes in the
+  // Content-Disposition header (e.g. filename="最近AI新闻总结.pdf").
+  // HTTP headers are parsed as Latin-1 by Node.js, so UTF-8 multibyte
+  // sequences get garbled (e.g. "最" → "æ\x9C\x80").
+  // decodeURIComponent() does nothing since the bytes are not percent-encoded.
+  //
+  // Fix: after extracting the filename, detect Latin-1-garbled UTF-8 bytes
+  // and re-decode them correctly.
+  const larkMediaPath = path.join(runtimeExtensionsDir, 'openclaw-lark', 'src', 'messaging', 'outbound', 'media.js');
+  if (fs.existsSync(larkMediaPath)) {
+    let mediaSrc = fs.readFileSync(larkMediaPath, 'utf8');
+    const patchMarker = 'fixLatin1GarbledUtf8';
+    if (!mediaSrc.includes(patchMarker)) {
+      const target = 'fileName = decodeURIComponent(match[1].trim());';
+      const idx = mediaSrc.indexOf(target);
+      if (idx !== -1) {
+        const replacement = `fileName = decodeURIComponent(match[1].trim());
+                // Patched by LobsterAI: fix Latin-1 garbled UTF-8 filenames from Feishu API
+                fileName = ${patchMarker}(fileName);`;
+        mediaSrc = mediaSrc.slice(0, idx) + replacement + mediaSrc.slice(idx + target.length);
+        // Insert the helper function before the downloadMessageResourceFeishu function
+        const fnMarker = 'async function downloadMessageResourceFeishu(';
+        const fnIdx = mediaSrc.indexOf(fnMarker);
+        if (fnIdx !== -1) {
+          const helperFn = `// Patched by LobsterAI: detect and fix Latin-1 garbled UTF-8 filenames.
+// When Node.js parses HTTP headers as Latin-1, UTF-8 multibyte Chinese
+// characters get split into individual high bytes (e.g. U+6700 "最" encoded
+// as 0xE6 0x9C 0x80 in UTF-8 becomes "æ\\x9C\\x80" in Latin-1).
+function ${patchMarker}(name) {
+    if (!name) return name;
+    try {
+        const buf = Buffer.from(name, 'latin1');
+        const decoded = buf.toString('utf-8');
+        // If re-decoding produces fewer chars and no replacement chars, it was garbled UTF-8
+        if (decoded.length < name.length && !decoded.includes('\\ufffd')) {
+            return decoded;
+        }
+    } catch {}
+    return name;
+}
+`;
+          mediaSrc = mediaSrc.slice(0, fnIdx) + helperFn + mediaSrc.slice(fnIdx);
+        }
+        fs.writeFileSync(larkMediaPath, mediaSrc);
+        log('Patched openclaw-lark/media.js: fix Content-Disposition filename encoding for Chinese');
+      } else {
+        log('openclaw-lark/media.js: fileName assignment pattern not found, skipping patch');
+      }
+    } else {
+      log('openclaw-lark/media.js already patched for filename encoding, skipping');
+    }
+  }
+
+  // --- Post-install patch: dingtalk-connector file:// URL fix (Windows only) ---
+  // On Windows, downloadImageToFile returns paths with backslashes (e.g.
+  // D:\data\media\inbound\image.jpg).  The original code constructs
+  // `file://${path}` which produces `file://D:\...` — an invalid file URL
+  // where the drive letter is parsed as the hostname, causing
+  // safeFileURLToPath to reject it.  Images silently fail to reach the model.
+  // On macOS/Linux paths start with `/`, so `file://${path}` already produces
+  // a valid three-slash URL — no patching needed there.
+  //
+  // Fix: on Windows, normalise backslashes to forward slashes and use three
+  // slashes after `file:` so the hostname is always empty.
+  const dingtalkMsgHandlerPath = path.join(
+    runtimeExtensionsDir, 'dingtalk-connector', 'src', 'core', 'message-handler.ts'
+  );
+  if (fs.existsSync(dingtalkMsgHandlerPath)) {
+    let dtSrc = fs.readFileSync(dingtalkMsgHandlerPath, 'utf8');
+    const brokenPattern = "imageLocalPaths.map(p => `![image](file://${p})`)";
+    if (dtSrc.includes(brokenPattern)) {
+      dtSrc = dtSrc.replace(
+        brokenPattern,
+        "imageLocalPaths.map(p => { if (process.platform !== 'win32') return `![image](file://${p})`; const n = p.replace(/\\\\/g, '/'); return `![image](file:///${n})`; })"
+      );
+      fs.writeFileSync(dingtalkMsgHandlerPath, dtSrc);
+      log('Patched dingtalk-connector/message-handler.ts: fixed file:// URL format for Windows');
+    } else {
+      log('dingtalk-connector/message-handler.ts: file:// pattern not found or already patched, skipping');
+    }
+  } else {
+    log('dingtalk-connector not found, skipping file:// URL patch');
+  }
 }
 
 if (require.main === module) {

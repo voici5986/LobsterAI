@@ -12,6 +12,8 @@ import { skillService } from '../../services/skill';
 import { RootState } from '../../store';
 import { selectDraftPrompts } from '../../store/selectors/coworkSelectors';
 import { addDraftAttachment, clearDraftAttachments, type DraftAttachment, setDraftAttachments, setDraftPrompt } from '../../store/slices/coworkSlice';
+import type { Model } from '../../store/slices/modelSlice';
+import { setSelectedModel } from '../../store/slices/modelSlice';
 import { setSkills, toggleActiveSkill } from '../../store/slices/skillSlice';
 import { CoworkImageAttachment } from '../../types/cowork';
 import { Skill } from '../../types/skill';
@@ -21,7 +23,7 @@ import PaperClipIcon from '../icons/PaperClipIcon';
 import XMarkIcon from '../icons/XMarkIcon';
 import ModelSelector from '../ModelSelector';
 import { ActiveSkillBadge,SkillsButton } from '../skills';
-import { resolveAgentModelSelection } from './agentModelSelection';
+import { resolveAgentModelSelection, resolveEffectiveModel, useAgentSelectedModel } from './agentModelSelection';
 import AttachmentCard from './AttachmentCard';
 import FolderSelectorPopover from './FolderSelectorPopover';
 
@@ -142,7 +144,6 @@ const CoworkPromptInput = React.forwardRef<CoworkPromptInputRef, CoworkPromptInp
     const agents = useSelector((state: RootState) => state.agent.agents);
     const coworkAgentEngine = useSelector((state: RootState) => state.cowork.config.agentEngine);
     const availableModels = useSelector((state: RootState) => state.model.availableModels);
-    const globalSelectedModel = useSelector((state: RootState) => state.model.selectedModel);
     const currentSession = useSelector((state: RootState) => state.cowork.currentSession);
     const [value, setValue] = useState(draftPrompt);
     const [showFolderMenu, setShowFolderMenu] = useState(false);
@@ -186,6 +187,7 @@ const CoworkPromptInput = React.forwardRef<CoworkPromptInputRef, CoworkPromptInp
   const activeSkillIds = useSelector((state: RootState) => state.skill.activeSkillIds);
   const skills = useSelector((state: RootState) => state.skill.skills);
   const currentAgent = agents.find((agent) => agent.id === currentAgentId);
+  const currentAgentSelectedModel = useAgentSelectedModel(currentAgentId, currentAgent?.model ?? '');
   const {
     selectedModel: agentSelectedModel,
     hasInvalidExplicitModel: agentModelIsInvalid,
@@ -193,13 +195,24 @@ const CoworkPromptInput = React.forwardRef<CoworkPromptInputRef, CoworkPromptInp
     sessionModel: currentSession && currentSession.id === sessionId ? currentSession.modelOverride : '',
     agentModel: currentAgent?.model ?? '',
     availableModels,
-    fallbackModel: globalSelectedModel,
+    fallbackModel: currentAgentSelectedModel,
     engine: coworkAgentEngine,
   });
+
+  if (sessionId && currentSession) {
+    console.log('[CoworkPromptInput] model resolve:', { sessionId, currentSessionId: currentSession.id, modelOverride: currentSession.modelOverride, resolvedName: agentSelectedModel?.name, resolvedProvider: agentSelectedModel?.providerKey, resolvedIsServer: agentSelectedModel?.isServerModel });
+  }
 
   const isLarge = size === 'large';
   const minHeight = isLarge ? 60 : 24;
   const maxHeight = isLarge ? 200 : 200;
+
+  const effectiveSelectedModel = resolveEffectiveModel({
+    sessionId,
+    agentSelectedModel,
+    globalSelectedModel: currentAgentSelectedModel,
+  });
+  const modelSupportsImage = !!effectiveSelectedModel?.supportsImage;
 
   // Load skills on mount
   useEffect(() => {
@@ -372,7 +385,7 @@ const CoworkPromptInput = React.forwardRef<CoworkPromptInputRef, CoworkPromptInp
     dispatch(setDraftPrompt({ sessionId: draftKey, draft: '' }));
     dispatch(clearDraftAttachments(draftKey));
     setImageVisionHint(false);
-  }, [value, isStreaming, disabled, onSubmit, activeSkillIds, skills, attachments, showFolderSelector, workingDirectory, dispatch, draftKey]);
+  }, [value, isStreaming, disabled, onSubmit, activeSkillIds, skills, attachments, showFolderSelector, workingDirectory, dispatch, draftKey, effectiveSelectedModel?.id, modelSupportsImage]);
 
   const handleSelectSkill = useCallback((skill: Skill) => {
     dispatch(toggleActiveSkill(skill.id));
@@ -452,9 +465,6 @@ const CoworkPromptInput = React.forwardRef<CoworkPromptInputRef, CoworkPromptInp
       onWorkingDirectoryChange(path);
     }
   };
-
-  const effectiveSelectedModel = coworkAgentEngine === 'openclaw' ? agentSelectedModel : globalSelectedModel;
-  const modelSupportsImage = !!effectiveSelectedModel?.supportsImage;
 
   const addAttachment = useCallback((filePath: string, imageInfo?: { isImage: boolean; dataUrl?: string }) => {
     if (!filePath) return;
@@ -915,16 +925,27 @@ const CoworkPromptInput = React.forwardRef<CoworkPromptInputRef, CoworkPromptInp
                   <div className="flex flex-col items-start gap-1">
                     <ModelSelector
                       dropdownDirection="up"
-                      value={coworkAgentEngine === 'openclaw' ? agentSelectedModel : null}
+                      value={coworkAgentEngine === 'openclaw'
+                        ? (agentModelIsInvalid && currentSession?.modelOverride
+                          ? { id: '__invalid__', name: currentSession.modelOverride.split('/').pop() || currentSession.modelOverride } as Model
+                          : agentSelectedModel)
+                        : null}
                       onChange={coworkAgentEngine === 'openclaw'
                         ? async (nextModel) => {
+                            if (!nextModel) return;
+                            const modelRef = toOpenClawModelRef(nextModel);
+                            console.log('[CoworkPromptInput] model selected:', { id: nextModel.id, providerKey: nextModel.providerKey, isServerModel: nextModel.isServerModel, modelRef });
                             if (sessionId) {
-                              if (!nextModel) return;
-                              await coworkService.patchSession(sessionId, { model: toOpenClawModelRef(nextModel) });
+                              await coworkService.patchSession(sessionId, { model: modelRef });
+                              if (currentAgent && agentModelIsInvalid) {
+                                console.log('[CoworkPromptInput] auto-fixing invalid agent model:', currentAgent.id, currentAgent.model, '->', modelRef);
+                                agentService.updateAgent(currentAgent.id, { model: modelRef });
+                              }
                               return;
                             }
-                            if (!currentAgent || !nextModel) return;
-                            await agentService.updateAgent(currentAgent.id, { model: toOpenClawModelRef(nextModel) });
+                            if (!currentAgent) return;
+                            console.log('[CoworkPromptInput] home page model change (Redux only, no agent update):', { modelRef, modelName: nextModel.name, providerKey: nextModel.providerKey });
+                            dispatch(setSelectedModel({ agentId: currentAgentId, model: nextModel }));
                           }
                         : undefined}
                     />

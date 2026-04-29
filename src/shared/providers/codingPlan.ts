@@ -15,5 +15,8 @@ export function resolveCodingPlanBaseUrl(
   }
   const effectiveFormat = def.preferredCodingPlanFormat ?? apiFormat;
   const url = def.codingPlanUrls[effectiveFormat];
+  if (!url) {
+    return { baseUrl: currentBaseUrl, effectiveFormat: apiFormat };
+  }
   return { baseUrl: url, effectiveFormat };
 }

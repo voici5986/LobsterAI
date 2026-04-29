@@ -1,4 +1,4 @@
-import { type ApiFormat,ProviderRegistry } from '@shared/providers';
+import { type ApiFormat,type ProviderConfig,ProviderRegistry } from '@shared/providers';
 
 import { AppConfig, CONFIG_KEYS, defaultConfig, isCustomProvider } from '../config';
 import { localStore } from './store';
@@ -53,6 +53,18 @@ const normalizeProviderApiFormat = (providerKey: string, apiFormat: unknown): 'a
   return 'anthropic';
 };
 
+const normalizeProviderModels = (
+  providerKey: string,
+  models: ProviderConfig['models'],
+): ProviderConfig['models'] => models?.map(model => ({
+  ...model,
+  supportsImage: ProviderRegistry.resolveModelSupportsImage(
+    providerKey,
+    model.id,
+    model.supportsImage,
+  ),
+}));
+
 const normalizeProvidersConfig = (providers: AppConfig['providers']): AppConfig['providers'] => {
   if (!providers) {
     return providers;
@@ -65,6 +77,7 @@ const normalizeProvidersConfig = (providers: AppConfig['providers']): AppConfig[
         ...providerConfig,
         baseUrl: normalizeProviderBaseUrl(providerKey, providerConfig.baseUrl),
         apiFormat: normalizeProviderApiFormat(providerKey, providerConfig.apiFormat),
+        models: normalizeProviderModels(providerKey, providerConfig.models),
       },
     ])
   ) as AppConfig['providers'];
@@ -143,6 +156,9 @@ class ConfigService {
   async init() {
     try {
       const storedConfig = await localStore.getItem<AppConfig>(CONFIG_KEYS.APP_CONFIG);
+      if (!storedConfig) {
+        console.warn('[ConfigService] init: no stored config found, using defaults');
+      }
       if (storedConfig) {
         const mergedProviders = storedConfig.providers
           ? Object.fromEntries(
@@ -178,6 +194,10 @@ class ConfigService {
                     ...mergedProvider,
                     baseUrl: normalizeProviderBaseUrl(providerKey, mergedProvider.baseUrl),
                     apiFormat: normalizeProviderApiFormat(providerKey, mergedProvider.apiFormat),
+                    models: normalizeProviderModels(
+                      providerKey,
+                      mergedProvider.models as ProviderConfig['models'],
+                    ),
                   };
                 })(),
               ])
@@ -216,7 +236,7 @@ class ConfigService {
         });
       }
     } catch (error) {
-      console.error('Failed to load config:', error);
+      console.error('[ConfigService] init failed:', error);
     }
   }
 
@@ -226,8 +246,15 @@ class ConfigService {
 
   async updateConfig(newConfig: Partial<AppConfig>) {
     const normalizedProviders = normalizeProvidersConfig(newConfig.providers as AppConfig['providers'] | undefined);
+
+    // Read-modify-write: use the latest stored value as the base to avoid
+    // overwriting fields (e.g. providers) with stale in-memory defaults when
+    // only a subset of config is being updated.
+    const stored = await localStore.getItem<AppConfig>(CONFIG_KEYS.APP_CONFIG);
+    const base = stored ?? this.config;
+
     this.config = {
-      ...this.config,
+      ...base,
       ...newConfig,
       ...(normalizedProviders ? { providers: normalizedProviders } : {}),
     };

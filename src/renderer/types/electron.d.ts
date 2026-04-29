@@ -453,6 +453,7 @@ interface IElectronAPI {
       missingEntries?: string[];
       error?: string;
     }>;
+    fromRenderer: (level: string, tag: string, message: string) => void;
   };
   im: {
     getConfig: () => Promise<{ success: boolean; config?: IMGatewayConfig; error?: string }>;
@@ -657,6 +658,18 @@ interface IElectronAPI {
       error?: string;
     }>;
     onTokenUpdated: (callback: (data: { token: string; baseUrl: string }) => void) => () => void;
+  };
+  openaiCodexOAuth: {
+    start: () => Promise<
+      | { success: true; email: string | null; accountId: string | null; expiresAt: number }
+      | { success: false; error: string }
+    >;
+    cancel: () => Promise<void>;
+    logout: () => Promise<void>;
+    status: () => Promise<
+      | { loggedIn: true; email: string | null; accountId: string | null; expiresAt: number }
+      | { loggedIn: false }
+    >;
   };
 }
 

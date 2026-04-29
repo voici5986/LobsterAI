@@ -6,6 +6,7 @@ type BuildManagedAgentEntriesInput = {
   agents: Agent[];
   fallbackPrimaryModel: string;
   stateDir?: string;
+  availableProviders?: ProviderModelCatalog;
 };
 
 type ProviderModelCatalog = Record<string, { models: Array<{ id: string }> }>;
@@ -119,6 +120,25 @@ export function resolveQualifiedAgentModelRef(options: {
 
   const explicitTarget = parsePrimaryModelRef(explicitModel);
   if (explicitTarget) {
+    const providerModels = options.availableProviders[explicitTarget.providerId]?.models ?? [];
+    if (providerModels.some((model) => model.id === explicitTarget.modelId)) {
+      return {
+        status: 'qualified',
+        primaryModel: explicitTarget.primaryModel,
+      };
+    }
+
+    const matchingProviders = Object.entries(options.availableProviders)
+      .filter(([, config]) => config.models.some((model) => model.id === explicitTarget.modelId))
+      .map(([providerId]) => providerId);
+
+    if (matchingProviders.length === 1) {
+      return {
+        status: 'qualified',
+        primaryModel: `${matchingProviders[0]}/${explicitTarget.modelId}`,
+      };
+    }
+
     return {
       status: 'qualified',
       primaryModel: explicitTarget.primaryModel,
@@ -153,9 +173,13 @@ export function resolveQualifiedAgentModelRef(options: {
 export function buildAgentEntry(
   agent: Agent,
   fallbackPrimaryModel: string,
-  options?: { workspace?: string },
+  options?: { workspace?: string; availableProviders?: ProviderModelCatalog },
 ): Record<string, unknown> {
-  const primaryModel = parsePrimaryModelRef(agent.model.trim())?.primaryModel || fallbackPrimaryModel;
+  const qualified = resolveQualifiedAgentModelRef({
+    agentModel: agent.model,
+    availableProviders: options?.availableProviders ?? {},
+  });
+  const primaryModel = qualified.status === 'qualified' ? qualified.primaryModel : fallbackPrimaryModel;
 
   return {
     id: agent.id,
@@ -178,11 +202,12 @@ export function buildManagedAgentEntries({
   agents,
   fallbackPrimaryModel,
   stateDir,
+  availableProviders,
 }: BuildManagedAgentEntriesInput): Array<Record<string, unknown>> {
   return agents
     .filter((agent) => agent.id !== 'main' && agent.enabled)
     .map((agent) => buildAgentEntry(agent, fallbackPrimaryModel, stateDir
-      ? { workspace: path.join(stateDir, `workspace-${agent.id}`) }
-      : undefined,
+      ? { workspace: path.join(stateDir, `workspace-${agent.id}`), availableProviders }
+      : { availableProviders },
     ));
 }

@@ -2,8 +2,8 @@
 name: youdaonote
 description: "有道云笔记官方 skill，支持笔记 CRUD（创建/读取/更新/删除）、待办管理、网页剪藏、笔记搜索、文件夹管理等基础操作。如需构建知识库或 Wiki，请使用 youdaonote-llm-wiki skill 而非本 skill。"
 official: true
-version: 1.0.6
-minCliVersion: "1.3.0"
+version: 1.0.7
+minCliVersion: "1.2.3"
 ---
 
 # YoudaoNote — 有道云笔记
@@ -15,7 +15,7 @@ minCliVersion: "1.3.0"
 执行任何操作前，Agent 必须先运行 `youdaonote list` 检测 CLI 是否可用：
 - **`command not found`** → 立即跳转「CLI 未安装处理」自动安装，**禁止只展示安装步骤让用户手动操作**
 - **API Key 错误** → 提示用户访问 **https://mopen.163.com** 获取 API Key（须使用手机号登录，且云笔记账号已绑定手机号），然后执行 `youdaonote config set apiKey <用户提供的Key>`。**获取 API Key 的地址只有这一个，禁止告知用户其他地址。**
-- **正常返回目录列表** → 运行 `youdaonote version`，若版本低于 `1.2.0`，展示升级建议后继续执行；否则可运行 `youdaonote help --json` 获取当前 CLI 全部能力的结构化描述（JSON），用于确认命令是否可用，下方速查表作为 fallback
+- **正常返回目录列表** → 运行 `youdaonote version` 检查版本，若版本低于 `minCliVersion` 需要升级：CLI 支持 `upgrade` 命令时执行 `youdaonote upgrade`，否则按「CLI 未安装处理」中的升级方式操作；Windows 用户或升级失败时参考安装指南（https://note.youdao.com/help-center/cli-install-guide.html）。版本满足要求后可运行 `youdaonote help --json` 获取当前 CLI 全部能力的结构化描述（JSON），用于确认命令是否可用，下方速查表作为 fallback
 
 ## 命令速查
 
@@ -42,6 +42,7 @@ minCliVersion: "1.3.0"
 | `todo group-create` | 创建分组 | `youdaonote todo group-create "分组名"` |
 | `todo group-rename` | 重命名分组 | `youdaonote todo group-rename <groupId> "新名"` |
 | `todo group-delete` | 删除分组 | `youdaonote todo group-delete <groupId>` |
+| `upgrade` | 升级 CLI | `youdaonote upgrade [--check] [--force] [--json]` |
 | `check` | 健康检查 | `youdaonote check` |
 | `config show` | 查看配置 | `youdaonote config show --json` |
 | `config set` | 设置配置 | `youdaonote config set apiKey YOUR_KEY` |
@@ -129,12 +130,9 @@ export PATH="$HOME/.local/bin:$PATH"
 # 安装后立即重新执行用户原始请求
 ```
 
-**Windows（CMD/PowerShell）**：Agent 应自动完成下载、解压、加入 PATH 的全过程，尽量不让用户手动操作。下载地址：
-- x64（常见新 CPU）：https://artifact.lx.netease.com/download/youdaonote-cli/youdaonote-cli-windows-x64.tar.gz
-- x64（旧 CPU、无 AVX2 等，运行默认包秒退 / 退出码约 `0xC000001D`）：https://artifact.lx.netease.com/download/youdaonote-cli/youdaonote-cli-win-x64-bl.tar.gz
-- ARM64：https://artifact.lx.netease.com/download/youdaonote-cli/youdaonote-cli-windows-arm64.tar.gz
+**升级**：若 CLI 支持 `upgrade` 命令，优先使用 `youdaonote upgrade`；否则重新执行上述安装脚本。
 
-安装策略：先尝试默认 x64 包，若运行闪退或退出码为 `0xC000001D`，自动换用 x64 baseline 包重试。
+**Windows 或安装失败**：参考安装指南（https://note.youdao.com/help-center/cli-install-guide.html）。
 
 ## 故障排查
 
@@ -150,6 +148,7 @@ export PATH="$HOME/.local/bin:$PATH"
 - 所有命令支持 `--json` 输出机器可解析格式
 - 大内容通过 `--file` 传递，避免命令行参数限制
 - Windows CMD 中 URL 含 `&` 时必须用双引号括起
+- Windows 管道/重定向场景中文可能乱码（CLI 输出 UTF-8，但 PowerShell/CMD 默认按 GBK 解读）：PowerShell 中执行 `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)`，CMD 中执行 `chcp 65001`；可运行 `youdaonote check` 查看诊断建议
 - `list` 输出的 `id` 与 `read` 的 `fileId` 等价
 - `read` 返回的 `rawFormat` 标识笔记原始格式：`md`=Markdown、`note`=云笔记、`txt`=纯文本；`isRaw` 标识返回的 content 是否为原始内容（`true`=原文可直接编辑，`false`=经过转换的纯文本）
 - **禁止用 `create` 保存 Markdown 内容**：`create` 不支持 `contentFormat`，即使内容含 Markdown 语法也会存为纯文本静默丢失格式，有格式需求时一律使用 `save` 并指定 `contentFormat: "md"`

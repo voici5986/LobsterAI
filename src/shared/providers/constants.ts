@@ -53,6 +53,7 @@ export const OpenClawProviderId = {
   Google: 'google',
   Anthropic: 'anthropic',
   OpenAI: 'openai',
+  OpenAICodex: 'openai-codex',
   DeepSeek: 'deepseek',
   Qianfan: 'qianfan',
   Qwen: 'qwen-portal', // OpenClaw normalizes 'qwen' → 'qwen-portal'; use canonical ID to avoid config diff loop
@@ -76,6 +77,7 @@ export const OpenClawApi = {
   AnthropicMessages: 'anthropic-messages',
   OpenAICompletions: 'openai-completions',
   OpenAIResponses: 'openai-responses',
+  OpenAICodexResponses: 'openai-codex-responses',
   GoogleGenerativeAI: 'google-generative-ai',
 } as const;
 export type OpenClawApi = typeof OpenClawApi[keyof typeof OpenClawApi];
@@ -118,10 +120,11 @@ interface ProviderDefInput {
    * Coding Plan dedicated endpoints (only for codingPlanSupported=true providers).
    * openai: OpenAI-compatible format endpoint
    * anthropic: Anthropic-compatible format endpoint
+   * Either field may be omitted for providers that only support one protocol.
    */
   readonly codingPlanUrls?: {
-    readonly openai: string;
-    readonly anthropic: string;
+    readonly openai?: string;
+    readonly anthropic?: string;
   };
   /**
    * When set, resolveCodingPlanBaseUrl will use this format (and its URL) regardless
@@ -247,6 +250,7 @@ const PROVIDER_DEFINITIONS = [
     region: 'china',
     enPriority: 0,
     defaultModels: [
+      { id: 'qwen3.6-plus', name: 'Qwen3.6 Plus', supportsImage: true },
       { id: 'qwen3.5-plus', name: 'Qwen3.5 Plus', supportsImage: true },
       { id: 'qwen3-coder-plus', name: 'Qwen3 Coder Plus', supportsImage: false },
     ],
@@ -316,10 +320,10 @@ const PROVIDER_DEFINITIONS = [
     region: 'china',
     enPriority: 0,
     defaultModels: [
-      { id: 'ark-code-latest', name: 'Auto', supportsImage: false },
-      { id: 'doubao-seed-2-0-pro-260215', name: 'Doubao-Seed-2.0-pro', supportsImage: false },
-      { id: 'doubao-seed-2-0-lite-260215', name: 'Doubao-Seed-2.0-lite', supportsImage: false },
-      { id: 'doubao-seed-2-0-mini-260215', name: 'Doubao-Seed-2.0-mini', supportsImage: false },
+      { id: 'doubao-seed-2-0-pro-260215', name: 'Doubao-Seed-2.0-pro', supportsImage: true },
+      { id: 'ark-code-latest', name: 'Auto', supportsImage: true },
+      { id: 'doubao-seed-2-0-lite-260215', name: 'Doubao-Seed-2.0-lite', supportsImage: true },
+      { id: 'doubao-seed-2-0-mini-260215', name: 'Doubao-Seed-2.0-mini', supportsImage: true },
     ],
   },
   {
@@ -351,7 +355,11 @@ const PROVIDER_DEFINITIONS = [
     openClawProviderId: OpenClawProviderId.Qianfan,
     defaultBaseUrl: 'https://qianfan.baidubce.com/v2',
     defaultApiFormat: ApiFormat.OpenAI,
-    codingPlanSupported: false,
+    codingPlanSupported: true,
+    codingPlanUrls: {
+      openai: 'https://qianfan.baidubce.com/v2/coding/chat/completions',
+    },
+    preferredCodingPlanFormat: 'openai',
     region: 'china',
     enPriority: 0,
     defaultModels: [
@@ -382,14 +390,23 @@ const PROVIDER_DEFINITIONS = [
     openClawProviderId: OpenClawProviderId.Xiaomi,
     defaultBaseUrl: 'https://api.xiaomimimo.com/anthropic',
     defaultApiFormat: ApiFormat.Anthropic,
-    codingPlanSupported: false,
+    codingPlanSupported: true,
+    codingPlanUrls: {
+      openai: 'https://token-plan-cn.xiaomimimo.com/v1',
+      anthropic: 'https://token-plan-cn.xiaomimimo.com/anthropic',
+    },
     switchableBaseUrls: {
       anthropic: 'https://api.xiaomimimo.com/anthropic',
       openai: 'https://api.xiaomimimo.com/v1/chat/completions',
     },
     region: 'china',
     enPriority: 0,
-    defaultModels: [{ id: 'mimo-v2-flash', name: 'MiMo V2 Flash', supportsImage: false }],
+    defaultModels: [
+      { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro', supportsImage: false },
+      { id: 'mimo-v2.5', name: 'MiMo V2.5', supportsImage: true },
+      { id: 'mimo-v2-pro', name: 'MiMo V2 Pro', supportsImage: false },
+      { id: 'mimo-v2-flash', name: 'MiMo V2 Flash', supportsImage: false },
+    ],
   },
   {
     id: ProviderName.Ollama,
@@ -540,8 +557,8 @@ export interface ProviderDef {
   readonly codingPlanSupported: boolean;
   /** Coding Plan dedicated endpoints */
   readonly codingPlanUrls?: {
-    readonly openai: string;
-    readonly anthropic: string;
+    readonly openai?: string;
+    readonly anthropic?: string;
   };
   /** When set, overrides caller's apiFormat for coding plan URL resolution. */
   readonly preferredCodingPlanFormat?: 'openai' | 'anthropic';
@@ -575,14 +592,21 @@ export interface ProviderDef {
 class ProviderRegistryImpl {
   private readonly defs: readonly ProviderDef[];
   private readonly idIndex: ReadonlyMap<string, ProviderDef>;
+  private readonly modelCapabilityIndex: ReadonlyMap<string, boolean>;
 
   constructor(definitions: readonly ProviderDef[]) {
     this.defs = definitions;
     const idx = new Map<string, ProviderDef>();
+    const modelIdx = new Map<string, boolean>();
     for (const def of definitions) {
       idx.set(def.id, def);
+      for (const model of [...def.defaultModels, ...(def.codingPlanModels ?? [])]) {
+        const existing = modelIdx.get(model.id);
+        modelIdx.set(model.id, existing === true || model.supportsImage);
+      }
     }
     this.idIndex = idx;
+    this.modelCapabilityIndex = modelIdx;
   }
 
   /** All provider IDs in definition order. */
@@ -617,6 +641,37 @@ class ProviderRegistryImpl {
 
   getOpenClawProviderId(providerName: string): string {
     return this.idIndex.get(providerName)?.openClawProviderId ?? providerName ?? OpenClawProviderId.Lobster;
+  }
+
+  getProviderModelSupportsImage(providerName: string, modelId: string): boolean | undefined {
+    const def = this.idIndex.get(providerName);
+    if (!def) return undefined;
+    const model = [...def.defaultModels, ...(def.codingPlanModels ?? [])]
+      .find(candidate => candidate.id === modelId);
+    return model?.supportsImage;
+  }
+
+  getKnownModelSupportsImage(modelId: string): boolean | undefined {
+    return this.modelCapabilityIndex.get(modelId);
+  }
+
+  resolveModelSupportsImage(
+    providerName: string,
+    modelId: string,
+    configuredSupportsImage?: boolean,
+  ): boolean {
+    const providerModelSupportsImage = this.getProviderModelSupportsImage(providerName, modelId);
+    if (providerModelSupportsImage !== undefined) {
+      return providerModelSupportsImage;
+    }
+    if (configuredSupportsImage === true) {
+      return true;
+    }
+    const knownModelSupportsImage = this.getKnownModelSupportsImage(modelId);
+    if (knownModelSupportsImage === true) {
+      return true;
+    }
+    return configuredSupportsImage ?? false;
   }
 
   /** Provider IDs filtered by region. */
