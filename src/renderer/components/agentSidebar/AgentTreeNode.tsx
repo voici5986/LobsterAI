@@ -7,6 +7,7 @@ import AgentConfirmDialog from '../agent/AgentConfirmDialog';
 import { AgentConfirmDialogVariant } from '../agent/constants';
 import ComposeIcon from '../icons/ComposeIcon';
 import DefaultAgentIcon from '../icons/DefaultAgentIcon';
+import EditIcon from '../icons/EditIcon';
 import EllipsisHorizontalIcon from '../icons/EllipsisHorizontalIcon';
 import PushPinIcon from '../icons/PushPinIcon';
 import TrashIcon from '../icons/TrashIcon';
@@ -302,7 +303,7 @@ const AgentTreeNode: React.FC<AgentTreeNodeProps> = ({
               className={menuItemClassName}
               role="menuitem"
             >
-              <ComposeIcon className={menuIconClassName} />
+              <EditIcon className={menuIconClassName} />
               {i18nService.t('edit')}
             </button>
             <button

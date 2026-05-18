@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { i18nService } from '../../services/i18n';
 import { RootState } from '../../store';
 import { toggleActiveSkill } from '../../store/slices/skillSlice';
-import PuzzleIcon from '../icons/PuzzleIcon';
+import SkillIcon from '../icons/SkillIcon';
 import XMarkIcon from '../icons/XMarkIcon';
 
 const ActiveSkillBadge: React.FC = () => {
@@ -34,7 +34,7 @@ const ActiveSkillBadge: React.FC = () => {
           title={i18nService.t('clearSkill')}
         >
           <span className="relative flex h-4 w-4 shrink-0 items-center justify-center rounded-sm transition-colors group-hover:bg-primary/15">
-            <PuzzleIcon className="h-3.5 w-3.5 text-primary transition-opacity group-hover:opacity-0" />
+            <SkillIcon className="h-3.5 w-3.5 text-primary transition-opacity group-hover:opacity-0" />
             <XMarkIcon className="absolute h-3 w-3 text-primary opacity-0 transition-opacity group-hover:opacity-100" />
           </span>
           <span className="min-w-0 truncate">

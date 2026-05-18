@@ -16,13 +16,13 @@ import { getAgentDisplayNameById } from '../utils/agentDisplay';
 import MyAgentSidebarTree from './agentSidebar/MyAgentSidebarTree';
 import Modal from './common/Modal';
 import CoworkSearchModal from './cowork/CoworkSearchModal';
-import ClockIcon from './icons/ClockIcon';
 import Cog6ToothIcon from './icons/Cog6ToothIcon';
 import ComposeIcon from './icons/ComposeIcon';
-import ConnectorIcon from './icons/ConnectorIcon';
-import PuzzleIcon from './icons/PuzzleIcon';
-import SearchIcon from './icons/SearchIcon';
+import SidebarAutomationIcon from './icons/SidebarAutomationIcon';
+import SidebarMcpIcon from './icons/SidebarMcpIcon';
+import SidebarSearchIcon from './icons/SidebarSearchIcon';
 import SidebarToggleIcon from './icons/SidebarToggleIcon';
+import SkillIcon from './icons/SkillIcon';
 import TrashIcon from './icons/TrashIcon';
 import LoginButton from './LoginButton';
 
@@ -319,7 +319,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             }}
             className={sidebarNavItemClassName}
           >
-            <SearchIcon className="h-4 w-4 shrink-0" />
+            <SidebarSearchIcon className="h-4 w-4 shrink-0" />
             {i18nService.t('search')}
           </button>
           <button
@@ -331,7 +331,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             className={activeView === 'scheduledTasks' ? activeSidebarNavItemClassName : sidebarNavItemClassName}
             aria-current={activeView === 'scheduledTasks' ? 'page' : undefined}
           >
-            <ClockIcon className="h-4 w-4 shrink-0" />
+            <SidebarAutomationIcon className="h-4 w-4 shrink-0" />
             {i18nService.t('scheduledTasks')}
           </button>
           <button
@@ -343,7 +343,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             className={activeView === 'skills' ? activeSidebarNavItemClassName : sidebarNavItemClassName}
             aria-current={activeView === 'skills' ? 'page' : undefined}
           >
-            <PuzzleIcon className="h-4 w-4 shrink-0" />
+            <SkillIcon className="h-4 w-4 shrink-0" />
             {i18nService.t('skills')}
           </button>
           <button
@@ -355,7 +355,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             className={activeView === 'mcp' ? activeSidebarNavItemClassName : sidebarNavItemClassName}
             aria-current={activeView === 'mcp' ? 'page' : undefined}
           >
-            <ConnectorIcon className="h-4 w-4 shrink-0" />
+            <SidebarMcpIcon className="h-4 w-4 shrink-0" />
             {i18nService.t('mcpServers')}
           </button>
         </div>

@@ -5,8 +5,8 @@ import { useSelector } from 'react-redux';
 import { i18nService } from '../../services/i18n';
 import { skillService } from '../../services/skill';
 import { RootState } from '../../store';
-import PuzzleIcon from '../icons/PuzzleIcon';
 import SearchIcon from '../icons/SearchIcon';
+import SkillIcon from '../icons/SkillIcon';
 
 interface AgentSkillSelectorProps {
   selectedSkillIds: string[];
@@ -103,7 +103,7 @@ const AgentSkillSelector: React.FC<AgentSkillSelectorProps> = ({ selectedSkillId
                   }`}
                 >
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-raised">
-                    <PuzzleIcon className="h-[18px] w-[18px] text-secondary" />
+                    <SkillIcon className="h-[18px] w-[18px] text-secondary" />
                   </div>
                   <div className="min-w-0 flex-1 pr-8">
                     <div className="truncate text-sm font-medium leading-5 text-foreground">

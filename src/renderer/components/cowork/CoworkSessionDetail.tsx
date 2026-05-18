@@ -45,12 +45,13 @@ import { formatMessageDateTime } from '../../utils/tokenFormat';
 import { parseUserMessageForDisplay } from '../../utils/userMessageDisplay';
 import { ArtifactPanel, ArtifactPreviewCard } from '../artifacts';
 import ComposeIcon from '../icons/ComposeIcon';
-import CopyIcon from '../icons/CopyIcon';
+import EditIcon from '../icons/EditIcon';
 import ExclamationTriangleIcon from '../icons/ExclamationTriangleIcon';
 import FileTypeIcon from '../icons/fileTypes/FileTypeIcon';
 import InformationCircleIcon from '../icons/InformationCircleIcon';
-import PuzzleIcon from '../icons/PuzzleIcon';
+import MessageCopyIcon from '../icons/MessageCopyIcon';
 import SidebarToggleIcon from '../icons/SidebarToggleIcon';
+import SkillIcon from '../icons/SkillIcon';
 import MarkdownContent from '../MarkdownContent';
 import WindowTitleBar from '../window/WindowTitleBar';
 import { type CoworkOpenShareOptionsEventDetail,CoworkUiEvent } from './constants';
@@ -1160,7 +1161,7 @@ const UserMessageSkillBadges: React.FC<{ skills: Skill[] }> = ({ skills }) => {
           className="inline-flex h-7 max-w-[240px] items-center gap-1.5 rounded-md bg-primary-muted px-2.5 text-[13px] font-normal leading-none text-foreground"
           title={skill.description}
         >
-          <PuzzleIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
+          <SkillIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
           <span className="min-w-0 truncate">
             {skill.name}
           </span>
@@ -1215,7 +1216,7 @@ const CopyButton: React.FC<{
           <polyline points="20 6 9 17 4 12"></polyline>
         </svg>
       ) : (
-        <CopyIcon className="w-4 h-4 text-[var(--icon-secondary)]" />
+        <MessageCopyIcon className="w-4 h-4 text-[var(--icon-secondary)]" />
       )}
     </button>
   );
@@ -1238,22 +1239,7 @@ const ReEditButton: React.FC<{
       tabIndex={visible ? 0 : -1}
       title={i18nService.t('coworkReEdit')}
     >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="24"
-        height="24"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="w-4 h-4 text-[var(--icon-secondary)]"
-        aria-hidden="true"
-      >
-        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-        <path d="m15 5 4 4" />
-      </svg>
+      <EditIcon className="w-4 h-4 text-[var(--icon-secondary)]" />
     </button>
   );
 };

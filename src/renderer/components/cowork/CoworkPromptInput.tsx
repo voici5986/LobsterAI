@@ -1,5 +1,5 @@
 import { CheckIcon, ChevronDownIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
-import { ArrowUpIcon, FolderIcon, StopIcon } from '@heroicons/react/24/solid';
+import { ArrowUpIcon, FolderIcon } from '@heroicons/react/24/solid';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -28,6 +28,7 @@ import { getCompactFolderName } from '../../utils/path';
 import AgentAvatarIcon from '../agent/AgentAvatarIcon';
 import DefaultAgentIcon from '../icons/DefaultAgentIcon';
 import PaperClipIcon from '../icons/PaperClipIcon';
+import TaskPauseIcon from '../icons/TaskPauseIcon';
 import XMarkIcon from '../icons/XMarkIcon';
 import ModelSelector from '../ModelSelector';
 import { ActiveSkillBadge, SkillsButton } from '../skills';
@@ -937,6 +938,7 @@ const CoworkPromptInput = React.forwardRef<CoworkPromptInputRef, CoworkPromptInp
     () => configService.getConfig().shortcuts?.sendMessage ?? 'Enter'
   );
   const sendButtonTitle = `${i18nService.t('sendMessage')} (${getSendShortcutLabel(currentSendShortcut)})`;
+  const stopButtonLabel = i18nService.t('stop');
   const currentAgentForDisplay: AgentSelectorOption = currentAgent ?? {
     id: currentAgentId,
     name: currentAgentId,
@@ -1042,22 +1044,22 @@ const CoworkPromptInput = React.forwardRef<CoworkPromptInputRef, CoworkPromptInp
   ) : null;
 
   const largeInputActions = !remoteManaged ? (
-    <>
+    <div className="flex items-center gap-0.5">
       <button
         type="button"
         onClick={handleAddFile}
-        className="flex h-7 w-7 items-center justify-center rounded-lg text-secondary hover:bg-surface-raised hover:text-foreground transition-colors"
+        className="flex h-[34px] w-[34px] items-center justify-center rounded-lg text-secondary hover:bg-surface-raised hover:text-foreground transition-colors"
         title={i18nService.t('coworkAddFile')}
         aria-label={i18nService.t('coworkAddFile')}
         disabled={disabled || isStreaming || isAddingFile}
       >
-        <PaperClipIcon className="h-4 w-4" />
+        <PaperClipIcon className="h-5 w-5" />
       </button>
       <SkillsButton
         onSelectSkill={handleSelectSkill}
         onManageSkills={handleManageSkills}
       />
-    </>
+    </div>
   ) : null;
   const largeSendButtonSizeClass = useCompactSendButton ? 'h-7 w-7' : 'h-8 w-8';
   const largeSendIconSizeClass = useCompactSendButton ? 'h-4 w-4' : 'h-[18px] w-[18px]';
@@ -1066,10 +1068,11 @@ const CoworkPromptInput = React.forwardRef<CoworkPromptInputRef, CoworkPromptInp
     <button
       type="button"
       onClick={handleStopClick}
-      className="p-2 rounded-xl bg-red-500 hover:bg-red-600 text-white transition-all shadow-subtle hover:shadow-card active:scale-95"
-      aria-label="Stop"
+      className="flex h-[34px] w-[34px] items-center justify-center rounded-full transition-all hover:opacity-90 active:scale-95 focus:outline-none focus:ring-2 focus:ring-primary/40"
+      aria-label={stopButtonLabel}
+      title={stopButtonLabel}
     >
-      <StopIcon className="h-5 w-5" />
+      <TaskPauseIcon className="h-[34px] w-[34px]" aria-hidden="true" />
     </button>
   ) : (
     <button
@@ -1383,12 +1386,12 @@ const CoworkPromptInput = React.forwardRef<CoworkPromptInputRef, CoworkPromptInp
                 <button
                   type="button"
                   onClick={handleAddFile}
-                  className="flex-shrink-0 p-1.5 rounded-lg text-secondary hover:bg-surface-raised hover:text-foreground transition-colors"
+                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-surface-raised hover:text-foreground transition-colors"
                   title={i18nService.t('coworkAddFile')}
                   aria-label={i18nService.t('coworkAddFile')}
                   disabled={disabled || isStreaming || isAddingFile}
                 >
-                  <PaperClipIcon className="h-4 w-4" />
+                  <PaperClipIcon className="h-5 w-5" />
                 </button>
               </div>
             )}
@@ -1399,10 +1402,11 @@ const CoworkPromptInput = React.forwardRef<CoworkPromptInputRef, CoworkPromptInp
                 <button
                   type="button"
                   onClick={handleStopClick}
-                  className="p-2 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-all shadow-subtle hover:shadow-card active:scale-95"
-                  aria-label="Stop"
+                  className="flex h-[34px] w-[34px] items-center justify-center rounded-full transition-all hover:opacity-90 active:scale-95 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  aria-label={stopButtonLabel}
+                  title={stopButtonLabel}
                 >
-                  <StopIcon className="h-4 w-4" />
+                  <TaskPauseIcon className="h-[34px] w-[34px]" aria-hidden="true" />
                 </button>
               </div>
             ) : (

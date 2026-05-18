@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useSelector } from 'react-redux';
 import { CheckIcon } from '@heroicons/react/24/outline';
-import SearchIcon from '../icons/SearchIcon';
-import PuzzleIcon from '../icons/PuzzleIcon';
-import Cog6ToothIcon from '../icons/Cog6ToothIcon';
+import React, { useEffect, useRef, useState } from 'react';
+import { useSelector } from 'react-redux';
+
 import { i18nService } from '../../services/i18n';
 import { skillService } from '../../services/skill';
 import { RootState } from '../../store';
 import { Skill } from '../../types/skill';
+import Cog6ToothIcon from '../icons/Cog6ToothIcon';
+import SearchIcon from '../icons/SearchIcon';
+import SkillIcon from '../icons/SkillIcon';
 
 interface SkillsPopoverProps {
   isOpen: boolean;
@@ -144,14 +145,10 @@ const SkillsPopover: React.FC<SkillsPopoverProps> = ({
               >
                 <div className={`mt-0.5 w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
                   isActive
-                    ? 'bg-primary text-white'
+                    ? 'bg-primary/10 text-primary'
                     : 'bg-surface-raised'
                 }`}>
-                  {isActive ? (
-                    <CheckIcon className="h-4 w-4" />
-                  ) : (
-                    <PuzzleIcon className="h-4 w-4 text-secondary" />
-                  )}
+                  <SkillIcon className={`h-4 w-4 ${isActive ? '' : 'text-secondary'}`} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
@@ -172,6 +169,9 @@ const SkillsPopover: React.FC<SkillsPopoverProps> = ({
                     {skillService.getLocalizedSkillDescription(skill.id, skill.name, skill.description)}
                   </p>
                 </div>
+                {isActive && (
+                  <CheckIcon className="mt-1 h-4 w-4 flex-shrink-0 text-primary" />
+                )}
               </button>
             );
           })

@@ -4,10 +4,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { i18nService } from '../../services/i18n';
 import Modal from '../common/Modal';
+import EditIcon from '../icons/EditIcon';
 import EllipsisHorizontalIcon from '../icons/EllipsisHorizontalIcon';
 import ListChecksIcon from '../icons/ListChecksIcon';
 import LoadingIcon from '../icons/LoadingIcon';
-import PencilSquareIcon from '../icons/PencilSquareIcon';
 import PushPinIcon from '../icons/PushPinIcon';
 import TrashIcon from '../icons/TrashIcon';
 import { AgentSidebarIndicator } from './constants';
@@ -328,7 +328,7 @@ const AgentTaskRow: React.FC<AgentTaskRowProps> = ({
             className={menuItemClassName}
             role="menuitem"
           >
-            <PencilSquareIcon className={menuIconClassName} />
+            <EditIcon className={menuIconClassName} />
             {i18nService.t('renameConversation')}
           </button>
           <button
